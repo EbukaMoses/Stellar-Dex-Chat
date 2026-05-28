@@ -166,6 +166,7 @@ export default function BankDetailsModal({
   const [editingName, setEditingName] = useState('');
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [saveCustomName, setSaveCustomName] = useState('');
+  const [saveNameError, setSaveNameError] = useState('');
 
   // Step 1 - bank selection
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -560,10 +561,11 @@ export default function BankDetailsModal({
 
     const validation = bankDetailsSchema.pick({ saveCustomName: true }).safeParse({ saveCustomName });
     if (!validation.success) {
-      addNotification('payout_fail', validation.error.issues[0].message);
+      setSaveNameError(validation.error.issues[0].message);
       return;
     }
 
+    setSaveNameError('');
     addBeneficiary(
       selectedBank.id,
       selectedBank.name,
@@ -925,10 +927,20 @@ export default function BankDetailsModal({
                     <input
                       type="text"
                       value={saveCustomName}
-                      onChange={(e) => setSaveCustomName(e.target.value)}
+                      onChange={(e) => {
+                        setSaveCustomName(e.target.value);
+                        setSaveNameError('');
+                      }}
                       placeholder={verifiedAccount.account_name}
                       className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                      aria-describedby={saveNameError ? 'save-name-error' : undefined}
                     />
+                    {saveNameError && (
+                      <p id="save-name-error" role="alert" className="flex items-center gap-1 text-xs text-red-400">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        {saveNameError}
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -943,6 +955,7 @@ export default function BankDetailsModal({
                         onClick={() => {
                           setShowSavePrompt(false);
                           setSaveCustomName('');
+                          setSaveNameError('');
                         }}
                         className="px-3 py-2 text-gray-400 hover:text-white text-sm transition-colors"
                       >
