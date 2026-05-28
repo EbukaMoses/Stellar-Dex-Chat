@@ -4794,3 +4794,6 @@ mod test_init_validation;
 
 #[cfg(test)]
 mod test_get_receipt_by_index;
+
+#[cfg(test)]
+mod test_pause_invariants;
