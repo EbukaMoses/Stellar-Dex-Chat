@@ -130,7 +130,7 @@ export default function AdminGuard({ children }: AdminGuardProps) {
 
   if (retryQueued && !isOnline) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-(--color-surface) p-6 text-center">
+      <div className="flex h-screen flex-col items-center justify-center bg-[var(--color-surface)] p-6 text-center">
         <svg
           className="mx-auto mb-4 h-12 w-12"
           style={{ color: 'var(--color-text-muted)' }}
@@ -164,7 +164,7 @@ export default function AdminGuard({ children }: AdminGuardProps) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-(--color-surface)">
+      <div className="flex h-screen items-center justify-center bg-[var(--color-surface)] text-[var(--color-text-primary)]">
         <div
           className="h-8 w-8 animate-spin rounded-full border-4"
           style={{
@@ -182,7 +182,7 @@ export default function AdminGuard({ children }: AdminGuardProps) {
   if (error) {
     return (
       <div
-        className="flex h-screen flex-col items-center justify-center bg-(--color-surface) p-6 text-center"
+        className="flex h-screen flex-col items-center justify-center bg-[var(--color-surface)] text-[var(--color-text-primary)] p-6 text-center"
       >
         <div className="mb-4" style={{ color: 'var(--color-danger)' }}>
           <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">

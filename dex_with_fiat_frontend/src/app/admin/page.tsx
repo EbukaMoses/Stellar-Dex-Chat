@@ -14,6 +14,8 @@ import useBridgeStats from '@/hooks/useBridgeStats';
 import AdminGuard from '@/components/AdminGuard';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { stroopsToDisplay } from '@/lib/stellarContract';
+import SkeletonHeader from '@/components/ui/skeleton/SkeletonHeader';
+import SkeletonPayout from '@/components/ui/skeleton/SkeletonPayout';
 import {
   AreaChart,
   Area,
@@ -324,11 +326,13 @@ export default function AdminDashboard() {
   if (loadingMetrics) {
     return (
       <div className="min-h-screen theme-app p-8">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold theme-text-primary mb-8">
-            Admin Dashboard
-          </h1>
-          <div className="text-center theme-text-muted">Loading metrics...</div>
+        <div className="max-w-7xl mx-auto space-y-6">
+          <SkeletonHeader />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <SkeletonPayout />
+            <SkeletonPayout />
+            <SkeletonPayout />
+          </div>
         </div>
       </div>
     );
