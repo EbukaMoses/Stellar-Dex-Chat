@@ -2729,12 +2729,49 @@ impl FiatBridge {
         Ok(())
     }
 
-    /// Records an operator heartbeat with strict nonce validation.
+    /// Records an operator heartbeat with monotonic nonce-based replay protection.
     ///
-    /// Replay protection rule:
-    /// - `nonce` must be exactly the current stored nonce for `operator`
-    /// - on success, nonce is incremented by 1 atomically with the heartbeat update
-    /// - stale values return `Error::StaleNonce`, skipped/future values return `Error::InvalidNonce`
+    /// This function prevents replay attacks by requiring operators to provide
+    /// the exact next expected nonce for their account. The nonce must match the
+    /// value retrieved via [`Self::get_operator_nonce`].
+    ///
+    /// # Replay Protection Mechanism
+    ///
+    /// **Nonce Requirement**: Each operator must provide exactly the next expected nonce.
+    /// - First heartbeat uses nonce `0`
+    /// - Subsequent calls require nonce `1`, `2`, `3`, etc. (monotonically increasing)
+    /// - Replaying an old nonce returns [`Error::StaleNonce`] (already used)
+    /// - Skipping ahead returns [`Error::InvalidNonce`] (future nonce)
+    /// - Providing the correct nonce succeeds and increments to the next value
+    ///
+    /// **Atomicity**: Nonce increment and heartbeat timestamp update occur atomically.
+    /// If nonce validation fails, no state changes occur.
+    ///
+    /// **Events**: On success, emits [`NonceIncrementedEvent`] with the new nonce value.
+    /// This event enables auditing and indexing of operator actions.
+    ///
+    /// # Arguments
+    ///
+    /// - `env`: The Soroban environment
+    /// - `operator`: The address of the operator (must be authorized via Soroban's `require_auth`)
+    /// - `nonce`: The nonce value provided by the operator (must equal `get_operator_nonce(operator)`)
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::NotOperator`]: Caller is not a registered operator
+    /// - [`Error::StaleNonce`]: The nonce has already been used (replay detected)
+    /// - [`Error::InvalidNonce`]: The nonce is skipped ahead (not the next expected value)
+    ///
+    /// # Example Flow
+    ///
+    /// ```text
+    /// 1. Client calls get_operator_nonce(operator) → returns 0
+    /// 2. Client calls heartbeat(operator, 0) → success, next nonce is 1
+    /// 3. Client calls get_operator_nonce(operator) → returns 1
+    /// 4. Client calls heartbeat(operator, 1) → success, next nonce is 2
+    /// 5. Client calls heartbeat(operator, 1) again → StaleNonce error
+    /// 6. Client calls heartbeat(operator, 5) → InvalidNonce error
+    /// ```
     pub fn heartbeat(env: Env, operator: Address, nonce: u64) -> Result<(), Error> {
         operator.require_auth();
         Self::require_not_paused(&env)?;
@@ -2783,9 +2820,44 @@ impl FiatBridge {
             .get(&DataKey::OperatorHeartbeat(operator))
     }
 
-    /// Returns the next expected nonce for an operator.
+    /// Returns the next expected nonce for an operator's next heartbeat action.
     ///
-    /// Starts at `0` for operators that have never submitted a heartbeat.
+    /// This read-only function retrieves the current nonce state for an operator
+    /// without modifying any contract state.
+    ///
+    /// **Replay Protection Context**: Clients must call this function before each
+    /// operator action to obtain the nonce required for [`Self::heartbeat`]. Using
+    /// an outdated nonce will result in `StaleNonce` error; using a future nonce
+    /// results in `InvalidNonce` error.
+    ///
+    /// # Nonce Lifecycle
+    ///
+    /// - **Initial state** (never heartbeat): returns `0`
+    /// - **After 1st heartbeat**: returns `1`
+    /// - **After 2nd heartbeat**: returns `2`
+    /// - **Increments monotonically** by 1 after each successful heartbeat
+    ///
+    /// # Recommended Usage
+    ///
+    /// ```text
+    /// // Always fetch fresh before signing an operator action
+    /// nonce = contract.get_operator_nonce(operator_address)
+    /// sign_heartbeat(operator_address, nonce)
+    /// submit_heartbeat(operator_address, nonce)
+    /// ```
+    ///
+    /// **Do not cache nonces** between heartbeats. On-chain state is authoritative.
+    /// If a heartbeat fails with a nonce error, re-fetch the nonce before retrying.
+    ///
+    /// # Arguments
+    ///
+    /// - `env`: The Soroban environment
+    /// - `operator`: The operator address to query
+    ///
+    /// # Returns
+    ///
+    /// The next expected nonce (u64) for the given operator. Starts at `0` for
+    /// operators that have never submitted a heartbeat.
     pub fn get_operator_nonce(env: Env, operator: Address) -> u64 {
         env.storage()
             .instance()
@@ -2793,6 +2865,72 @@ impl FiatBridge {
             .unwrap_or(0)
     }
 
+    /// Removes inactive operators from the operator registry.
+    ///
+    /// Operators who have not submitted a heartbeat within the configured inactivity
+    /// threshold are marked as inactive and removed from the active operator list.
+    /// This prevents stale operators from consuming resources or remaining eligible
+    /// for authorization checks.
+    ///
+    /// # Inactivity Mechanism
+    ///
+    /// An operator is considered inactive when:
+    /// ```text
+    /// current_ledger - last_heartbeat_ledger > inactivity_threshold
+    /// ```
+    ///
+    /// Where:
+    /// - `current_ledger`: Current Soroban ledger sequence number
+    /// - `last_heartbeat_ledger`: Ledger number of operator's last heartbeat (set by `heartbeat`)
+    /// - `inactivity_threshold`: Configured threshold (default: ~3 months ≈ 1,555,200 ledgers)
+    ///
+    /// **Heartbeat Requirement**: Operators must call [`Self::heartbeat`] within the
+    /// threshold period to maintain active status. Without regular heartbeats, the
+    /// operator becomes eligible for pruning.
+    ///
+    /// # Pruning Behavior
+    ///
+    /// On execution:
+    /// 1. Retrieves the inactivity threshold (or uses `DEFAULT_INACTIVITY_THRESHOLD`)
+    /// 2. Iterates through all registered operators
+    /// 3. For each active operator, checks if it has exceeded the inactivity threshold
+    /// 4. Inactive operators are:
+    ///    - Marked as inactive in storage (`DataKey::Operator` → `false`)
+    ///    - Removed from the operator list (`DataKey::OperatorList`)
+    ///    - Trigger [`OperatorPrunedEvent`] for audit trail
+    /// 5. Active operators remain in the list unchanged
+    ///
+    /// # Events
+    ///
+    /// For each pruned operator, emits [`OperatorPrunedEvent`] containing:
+    /// - The pruned operator address
+    /// - The current ledger sequence (when pruning occurred)
+    /// - Version tag for indexer compatibility
+    ///
+    /// # Authorization
+    ///
+    /// Only the contract admin can call this function (enforced via `require_auth`).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::NotInitialized`]: Contract has not been initialized
+    ///
+    /// # Example Timeline
+    ///
+    /// ```text
+    /// Ledger 1000: Operator A heartbeats (last_heartbeat = 1000)
+    /// Ledger 2000: Operator A has not heartbeat for 1000 ledgers
+    /// Threshold: 1555200 ledgers (~3 months)
+    /// Status: Still active (1000 < 1555200)
+    ///
+    /// Ledger 1556200: prune_inactive_operators called
+    /// Check: 1556200 - 1000 = 1555200 > 1555200? No, still within threshold
+    /// Status: Operator A remains active
+    ///
+    /// Ledger 1556201: prune_inactive_operators called
+    /// Check: 1556201 - 1000 = 1555201 > 1555200? Yes, exceeds threshold
+    /// Status: Operator A is pruned (marked inactive, removed from list)
+    /// ```
     pub fn prune_inactive_operators(env: Env) -> Result<(), Error> {
         let admin: Address = env
             .storage()
@@ -2804,24 +2942,58 @@ impl FiatBridge {
         Ok(())
     }
 
-    /// Validates nonce monotonicity and persists the next nonce value.
+    /// Internal helper: validates nonce monotonicity and atomically increments.
     ///
-    /// This helper is intentionally strict to block replay attacks:
-    /// each operator action must provide exactly the next expected nonce.
+    /// This is the core replay-protection engine. It enforces strict nonce validation,
+    /// ensuring that each operator action is processed exactly once in order.
     ///
-    /// # Overflow Prevention
-    /// The nonce is a `u64` incremented by 1 on each successful heartbeat.
-    /// At one heartbeat per ledger (~5 seconds) it would take approximately
-    /// 2.9 × 10¹² years to exhaust the `u64` range — overflow is not a
-    /// practical concern.  Nevertheless, the increment uses plain `+ 1`
-    /// (not `checked_add`) because the Soroban runtime's `overflow-checks`
-    /// profile flag causes a panic on overflow in both debug and release
-    /// builds, providing the same safety guarantee without the extra branch.
+    /// **Validation Logic**:
+    /// - Reads the current stored nonce for the operator (default `0` if never set)
+    /// - Compares provided nonce against current nonce:
+    ///   - `provided < current` → [`Error::StaleNonce`] (already used, replay attempt)
+    ///   - `provided > current` → [`Error::InvalidNonce`] (skipped ahead, out of order)
+    ///   - `provided == current` → validation passes, proceed to increment
+    /// - On validation pass: increments stored nonce by 1 and publishes [`NonceIncrementedEvent`]
     ///
-    /// # Replay Protection
-    /// - `provided_nonce < current_nonce` → [`Error::StaleNonce`] (already used)
-    /// - `provided_nonce > current_nonce` → [`Error::InvalidNonce`] (skipped ahead)
-    /// - `provided_nonce == current_nonce` → accepted, nonce incremented
+    /// **Atomicity**: The entire operation is atomic:
+    /// - Validation failure: no state changes, error returned immediately
+    /// - Validation success: nonce update and event publish happen together
+    /// - If transaction fails after this function succeeds, ledger rollback prevents partial updates
+    ///
+    /// **Security Properties**:
+    /// - **Replay Prevention**: Stale nonces are definitively rejected
+    /// - **Out-of-Order Protection**: Nonces must arrive in strict order; skips are forbidden
+    /// - **Per-Operator Isolation**: Each operator maintains independent nonce state
+    /// - **Monotonic Increment**: Each success guarantees next nonce is exactly `current + 1`
+    ///
+    /// # Overflow Behavior
+    ///
+    /// The nonce is a `u64`. At one heartbeat per ledger (~5 seconds), it would take
+    /// approximately 2.9 × 10¹² years to exhaust the `u64` range. However, to be safe,
+    /// this function uses `checked_add(1)` to catch theoretical overflow, returning
+    /// [`Error::Overflow`] if the nonce would exceed `u64::MAX`.
+    ///
+    /// # Arguments
+    ///
+    /// - `env`: Reference to the Soroban environment
+    /// - `operator`: Reference to the operator address
+    /// - `provided_nonce`: The nonce value claimed by the operator
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::StaleNonce`]: Provided nonce is less than stored nonce (already used)
+    /// - [`Error::InvalidNonce`]: Provided nonce is greater than stored nonce (skipped)
+    /// - [`Error::Overflow`]: Nonce increment would overflow (practically impossible)
+    ///
+    /// # Side Effects
+    ///
+    /// On success:
+    /// - Updates [`DataKey::OperatorNonce`] in instance storage
+    /// - Publishes [`NonceIncrementedEvent`] with new nonce value
+    ///
+    /// On failure:
+    /// - No state changes occur
+    /// - Returns appropriate error variant
     fn validate_and_increment_nonce(
         env: &Env,
         operator: &Address,
@@ -2858,6 +3030,43 @@ impl FiatBridge {
         Ok(())
     }
 
+    /// Internal implementation of operator inactivity pruning.
+    ///
+    /// This helper function processes the actual pruning logic. It is called by
+    /// [`Self::prune_inactive_operators`] after authorization is verified.
+    ///
+    /// **Algorithm**:
+    /// 1. Load the inactivity threshold from storage (or use default ~3 months)
+    /// 2. Get the current ledger sequence number
+    /// 3. Retrieve the list of all registered operators
+    /// 4. For each operator:
+    ///    a. Check if operator is marked as active
+    ///    b. If inactive (marked as false), skip and do not include in retained list
+    ///    c. If active, get the last heartbeat ledger timestamp
+    ///    d. Calculate inactivity duration: `current_ledger - last_heartbeat_ledger`
+    ///    e. If duration exceeds threshold: mark inactive and emit pruning event
+    ///    f. If duration is within threshold: retain operator in active list
+    /// 5. Update operator storage with the filtered list
+    /// 6. Update operator count
+    ///
+    /// **Threshold Computation** uses saturating arithmetic to handle edge cases:
+    /// ```text
+    /// saturating_sub prevents underflow if last_heartbeat > current_ledger
+    /// (shouldn't happen in practice, but protects against ledger reorg scenarios)
+    /// ```
+    ///
+    /// **Storage Updates**:
+    /// - [`DataKey::Operator(inactive_addr)`] set to `false` for pruned operators
+    /// - [`DataKey::OperatorList`] updated with only retained operators
+    /// - [`DataKey::OperatorCount`] updated with new count
+    ///
+    /// **Invariants Maintained**:
+    /// - OperatorCount always equals the length of OperatorList
+    /// - Pruned operators cannot be in both inactive and list states
+    /// - Pruning is idempotent (calling twice with same operators produces same result)
+    ///
+    /// **No Authorization Check**: This is an internal helper. Authorization must be
+    /// verified by the caller (typically [`Self::prune_inactive_operators`]).
     fn prune_inactive_operators_internal(env: &Env) {
         let threshold: u32 = env
             .storage()
