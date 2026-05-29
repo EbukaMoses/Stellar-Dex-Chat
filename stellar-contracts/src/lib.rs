@@ -2393,17 +2393,18 @@ impl FiatBridge {
     /// - stale values return `Error::StaleNonce`, skipped/future values return `Error::InvalidNonce`
     pub fn heartbeat(env: Env, operator: Address, nonce: u64) -> Result<(), Error> {
         operator.require_auth();
-        if Self::is_circuit_breaker_tripped(env.clone()) {
-            return Err(Error::CircuitBreakerActive);
-        }
-        if !env
-            .storage()
-            .instance()
-            .get::<_, bool>(&DataKey::Operator(operator.clone()))
-            .unwrap_or(false)
-        {
-            return Err(Error::NotOperator);
-        }
+        Self::require_not_paused(&env)?;
+        require!(
+            !Self::is_circuit_breaker_tripped(env.clone()),
+            Error::CircuitBreakerActive
+        );
+        require!(
+            env.storage()
+                .instance()
+                .get::<_, bool>(&DataKey::Operator(operator.clone()))
+                .unwrap_or(false),
+            Error::NotOperator
+        );
 
         // Validate and increment nonce for replay protection
         Self::validate_and_increment_nonce(&env, &operator, nonce)?;
