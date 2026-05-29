@@ -77,19 +77,37 @@ function useChartColors() {
     const updateColors = () => {
       const root = document.documentElement;
       const computedStyle = getComputedStyle(root);
+      const currentTheme = root.getAttribute('data-theme') || 'light';
+
+      // Theme-aware fallback colors
+      const fallbackColors = currentTheme === 'dark'
+        ? {
+            primary: '#3b82f6',
+            textMuted: '#94a3b8',
+            border: '#334155',
+            surface: '#0f172a',
+            surfaceBorder: '#334155',
+          }
+        : {
+            primary: '#3b82f6',
+            textMuted: '#6b7280',
+            border: '#e5e7eb',
+            surface: '#ffffff',
+            surfaceBorder: '#e5e7eb',
+          };
 
       setColors({
         primary:
-          computedStyle.getPropertyValue('--color-primary').trim() || '#3b82f6',
+          computedStyle.getPropertyValue('--color-primary').trim() || fallbackColors.primary,
         textMuted:
           computedStyle.getPropertyValue('--color-text-muted').trim() ||
-          '#9ca3af',
+          fallbackColors.textMuted,
         border:
-          computedStyle.getPropertyValue('--color-border').trim() || '#374151',
+          computedStyle.getPropertyValue('--color-border').trim() || fallbackColors.border,
         surface:
-          computedStyle.getPropertyValue('--color-surface').trim() || '#1f2937',
+          computedStyle.getPropertyValue('--color-surface').trim() || fallbackColors.surface,
         surfaceBorder:
-          computedStyle.getPropertyValue('--color-border').trim() || '#374151',
+          computedStyle.getPropertyValue('--color-border').trim() || fallbackColors.surfaceBorder,
       });
     };
 
