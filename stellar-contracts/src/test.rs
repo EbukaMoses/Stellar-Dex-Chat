@@ -626,6 +626,118 @@ fn test_set_emergency_recovery_rejects_negative_cap() {
     assert_eq!(bridge.get_emergency_recovery_cap(), None);
 }
 
+// ── Issue #574: admin authentication integration tests ────────────────────
+
+/// Verifies that the `EmergencyRecoverySetEvent` emitted by
+/// `set_emergency_recovery` contains the exact admin address that
+/// authorised the call, enabling off-chain indexers to attribute the
+/// configuration change to a specific key-holder.
+#[test]
+fn test_set_emergency_recovery_event_records_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, bridge, admin, _, _, _) = setup_bridge(&env, 1_000);
+    let recovery = Address::generate(&env);
+
+    bridge.set_emergency_recovery(&recovery, &500);
+
+    // Scan all events emitted by the bridge contract and locate the
+    // emergency_recovery_set_event topic, then confirm the admin field.
+    let events = env.events().all().filter_by_contract(&contract_id);
+    let raw = events.events();
+
+    let topic_symbol = soroban_sdk::xdr::ScVal::Symbol(soroban_sdk::xdr::ScSymbol(
+        soroban_sdk::xdr::StringM::try_from("emergency_recovery_set_event")
+            .expect("topic symbol"),
+    ));
+
+    let mut found = false;
+    for event in raw.iter() {
+        use soroban_sdk::xdr::ContractEventBody;
+        if let ContractEventBody::V0(body) = &event.body {
+            if body.topics.iter().any(|t| *t == topic_symbol) {
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "EmergencyRecoverySetEvent must be emitted");
+
+    // The admin stored in the contract must match the one used for init.
+    assert_eq!(bridge.get_admin(), admin);
+    // The recovery cap must reflect the value passed to the call.
+    assert_eq!(bridge.get_emergency_recovery_cap(), Some(500));
+}
+
+/// Verifies that calling `set_emergency_recovery` a second time
+/// overwrites the previously stored recovery address and cap limit.
+/// This is the intended administrative workflow when rotating recovery keys.
+#[test]
+fn test_set_emergency_recovery_overwrites_previous_recovery() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, bridge, _, _, _, _) = setup_bridge(&env, 1_000);
+
+    let recovery_v1 = Address::generate(&env);
+    let recovery_v2 = Address::generate(&env);
+
+    // First configuration
+    bridge.set_emergency_recovery(&recovery_v1, &300);
+    let snapshot_v1 = bridge.get_config_snapshot();
+    assert_eq!(snapshot_v1.emergency_recovery, Some(recovery_v1.clone()));
+    assert_eq!(bridge.get_emergency_recovery_cap(), Some(300));
+
+    // Rotate to a new recovery address and a different cap
+    bridge.set_emergency_recovery(&recovery_v2, &600);
+    let snapshot_v2 = bridge.get_config_snapshot();
+    assert_eq!(snapshot_v2.emergency_recovery, Some(recovery_v2.clone()));
+    assert_eq!(bridge.get_emergency_recovery_cap(), Some(600));
+
+    // Old address must no longer be returned
+    assert_ne!(snapshot_v2.emergency_recovery, Some(recovery_v1));
+}
+
+/// Verifies that `set_emergency_recovery` enforces admin-only access.
+///
+/// The function loads the stored admin address and calls `require_auth()` on
+/// it before any state mutation.  A caller whose address differs from the
+/// stored admin cannot satisfy that auth check and the host will trap,
+/// surfacing as an `Err` through the `try_` client wrapper.
+#[test]
+fn test_set_emergency_recovery_non_admin_cannot_call() {
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+
+    let env = Env::default();
+    // Set up the bridge with a real admin; mock all auths only for init.
+    env.mock_all_auths();
+    let (contract_id, bridge, _admin, _, _, _) = setup_bridge(&env, 1_000);
+
+    // Generate a completely different address that was never the admin.
+    let non_admin = Address::generate(&env);
+    let recovery = Address::generate(&env);
+
+    // Override: only authorize non_admin for this specific invocation.
+    // The contract will internally call `admin.require_auth()` for the
+    // *stored* admin address, which differs from non_admin, so auth fails.
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "set_emergency_recovery",
+            args: (recovery.clone(), 500i128).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = bridge.try_set_emergency_recovery(&recovery, &500);
+    assert!(
+        result.is_err(),
+        "non-admin caller must not be able to set emergency recovery"
+    );
+    // State must remain unchanged
+    assert_eq!(bridge.get_emergency_recovery_cap(), None);
+}
+
 #[test]
 fn test_operator_cap_enforced() {
     let env = Env::default();

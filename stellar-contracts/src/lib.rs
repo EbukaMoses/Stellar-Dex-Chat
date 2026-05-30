@@ -619,6 +619,8 @@ pub struct QuotaSetEvent {
 #[derive(Clone, Debug)]
 pub struct EmergencyRecoverySetEvent {
     pub version: u32,
+    /// The admin address that authorized this recovery configuration update.
+    pub admin: Address,
     pub recovery: Address,
     pub cap_limit: i128,
 }
@@ -2143,11 +2145,22 @@ impl FiatBridge {
     ///
     /// The cap is constrained by the token's configured deposit limit so a
     /// compromised recovery key cannot bypass configured risk bounds.
+    /// Set the emergency recovery address and enforce a maximum cap.
+    ///
+    /// Only the stored admin may invoke this function.  The cap is constrained
+    /// by the token's configured deposit limit so a compromised recovery key
+    /// cannot bypass configured risk bounds.
+    ///
+    /// Emits [`EmergencyRecoverySetEvent`] which records the admin address,
+    /// the new recovery address, and the approved cap limit for off-chain audit.
     pub fn set_emergency_recovery(
         env: Env,
         recovery: Address,
         cap_limit: i128,
     ) -> Result<(), Error> {
+        // ── Admin authentication ───────────────────────────────────────────
+        // Load the authoritative admin from instance storage and require their
+        // explicit authorization signature before any state mutation occurs.
         let admin: Address = env
             .storage()
             .instance()
@@ -2155,6 +2168,7 @@ impl FiatBridge {
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
 
+        // ── Parameter validation ───────────────────────────────────────────
         if cap_limit <= 0 {
             return Err(Error::ZeroAmount);
         }
@@ -2173,6 +2187,7 @@ impl FiatBridge {
             return Err(Error::ExceedsLimit);
         }
 
+        // ── State mutation ─────────────────────────────────────────────────
         env.storage()
             .instance()
             .set(&DataKey::EmergencyRecoveryAddress, &recovery);
@@ -2180,8 +2195,12 @@ impl FiatBridge {
             .instance()
             .set(&DataKey::EmergencyRecoveryCap, &cap_limit);
 
+        // ── Audit event ────────────────────────────────────────────────────
+        // Include the admin address so indexers can attribute the change to
+        // the specific key-holder who authorized it.
         EmergencyRecoverySetEvent {
             version: EVENT_VERSION,
+            admin,
             recovery,
             cap_limit,
         }
