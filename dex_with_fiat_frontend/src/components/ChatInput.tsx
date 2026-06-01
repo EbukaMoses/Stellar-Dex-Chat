@@ -32,9 +32,19 @@ export default function ChatInput({
   const { t } = useTranslation();
   const { connection } = useStellarWallet();
   const activePlaceholder = placeholder || t('chat.placeholder');
-  const isApplePlatform =
-    typeof navigator !== 'undefined' &&
-    /(Mac|iPhone|iPad|iPod)/i.test(navigator.platform);
+  // Detect the platform after mount rather than during render. Reading
+  // `navigator` during render makes the server (no navigator → false) and an
+  // Apple client (true) disagree, which produces a hydration mismatch on the
+  // shortcut label/aria attributes. Defaulting to the SSR-safe value and
+  // updating in an effect keeps the first client render identical to the
+  // server markup. (#607)
+  const [isApplePlatform, setIsApplePlatform] = useState(false);
+  useEffect(() => {
+    setIsApplePlatform(
+      typeof navigator !== 'undefined' &&
+        /(Mac|iPhone|iPad|iPod)/i.test(navigator.platform),
+    );
+  }, []);
   const submitShortcutLabel = isApplePlatform ? 'Cmd+Enter' : 'Ctrl+Enter';
   const submitShortcutKeys = isApplePlatform ? 'Meta+Enter' : 'Control+Enter';
   const [message, setMessage] = useState('');
