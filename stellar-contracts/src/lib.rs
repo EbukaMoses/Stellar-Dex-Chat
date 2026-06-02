@@ -2849,6 +2849,42 @@ impl FiatBridge {
         Ok(())
     }
 
+    /// Sets the maximum number of operators allowed to be active simultaneously.
+    ///
+    /// # Purpose
+    /// Configures the operator count cap. A value of 0 means unlimited operators.
+    /// Values > 0 enforce a hard limit on concurrent operator registrations.
+    ///
+    /// # Parameters
+    /// - `env`: The Stellar contract environment
+    /// - `max_operators`: The new maximum operator count (0 for unlimited)
+    ///
+    /// # Returns
+    /// `Ok(())` on successful update
+    /// `Err(Error::NotInitialized)` if contract admin not set
+    /// `Err(Error::ExceedsLimit)` if max_operators < current active operator count
+    ///
+    /// # Access Control
+    /// Only the contract admin (verified via `require_auth()`) may call this function.
+    ///
+    /// # Validation
+    /// - Contract must be initialized (admin exists)
+    /// - If setting a non-zero limit (max_operators > 0), must be >= current operator count
+    ///   to avoid violating the cap invariant
+    ///
+    /// # Errors
+    /// - `NotInitialized`: Admin not set (contract not initialized)
+    /// - `ExceedsLimit`: Attempting to reduce max below current operator count
+    ///
+    /// # Side Effects
+    /// - Updates persistent storage with new max operators value
+    /// - Does not affect currently registered operators
+    ///
+    /// # Example
+    /// ```ignore
+    /// contract.set_max_operators(env, 10)?;  // Allow up to 10 operators
+    /// contract.set_max_operators(env, 0)?;   // Allow unlimited operators
+    /// ```
     pub fn set_max_operators(env: Env, max_operators: u32) -> Result<(), Error> {
         let admin: Address = env
             .storage()
@@ -2856,6 +2892,18 @@ impl FiatBridge {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
+
+        // Boundary check: if setting a non-zero limit, ensure it doesn't violate
+        // the cap by being less than the current operator count
+        if max_operators > 0 {
+            let operators = Self::get_operator_list(&env);
+            let current_count = operators.len() as u32;
+            require!(
+                current_count <= max_operators,
+                Error::ExceedsLimit
+            );
+        }
+
         env.storage()
             .instance()
             .set(&DataKey::MaxOperators, &max_operators);
