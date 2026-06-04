@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 describe('networkQueue Memory Leak Regression', () => {
   beforeEach(() => {
     vi.resetModules();
-    delete (window as any).__networkQueueListenerAdded;
+    delete (window as Window).__networkQueueListenerAdded;
   });
 
   it('adds the online event listener only once even when module is evaluated multiple times', async () => {

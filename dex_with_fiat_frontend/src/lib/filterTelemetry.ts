@@ -41,7 +41,7 @@ function emit<P extends object>(
         // We cast name as ChatEventName to satisfy the ChatEvent type if needed,
         // or we could define a more generic TelemetryEvent type.
         // For now, let's keep it compatible with existing listeners.
-      name: name as any, 
+      name: name as unknown as ChatEvent['name'], 
       version: TELEMETRY_SCHEMA_VERSION,
       timestamp: Date.now(),
       payload: payload as Record<string, unknown>,

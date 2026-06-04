@@ -126,16 +126,6 @@ const stepVariants = {
   },
 };
 
-const fadeInVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.3,
-    },
-  },
-};
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -367,7 +357,7 @@ export default function BankDetailsModal({
     } finally {
       setVerifying(false);
     }
-  }, [accountNumber, selectedBank]);
+  }, [accountNumber, selectedBank, xlmAmount]);
 
   const handleConfirmPayout = async () => {
     if (

@@ -7,7 +7,7 @@ declare global {
     gtag?: (
       command: 'event',
       action: string,
-      params?: { [key: string]: any },
+      params?: Record<string, unknown>,
     ) => void;
   }
 }
