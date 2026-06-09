@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { toastAddMock } = vi.hoisted(() => ({

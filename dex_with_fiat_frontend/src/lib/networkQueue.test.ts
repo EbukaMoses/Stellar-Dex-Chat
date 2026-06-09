@@ -73,14 +73,14 @@ describe(
 
     it('should trigger error toast when request fails after MAX_RETRY', async () => {
       let isOnline = true;
-      let attemptCount = 0;
+      let _attemptCount = 0;
       Object.defineProperty(window.navigator, 'onLine', {
         configurable: true,
         get: () => isOnline,
       });
 
       const mockTask = vi.fn().mockImplementation(async () => {
-        attemptCount++;
+        _attemptCount++;
         // Always fail with network error
         throw new Error('failed to fetch');
       });
@@ -122,7 +122,7 @@ describe(
     });
 
     it('should use success variant for retry success toast', async () => {
-      let isOnline = true;
+      const isOnline = true;
       Object.defineProperty(window.navigator, 'onLine', {
         configurable: true,
         get: () => isOnline,
@@ -185,7 +185,7 @@ describe(
     });
 
     it('should not trigger toast for immediate non-network errors', async () => {
-      let isOnline = true;
+      const isOnline = true;
       Object.defineProperty(window.navigator, 'onLine', {
         configurable: true,
         get: () => isOnline,

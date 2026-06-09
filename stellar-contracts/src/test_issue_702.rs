@@ -83,7 +83,7 @@ fn test_unpause_invariant_emits_correct_event() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (contract_id, bridge, admin, _, _, _) = setup_bridge(&env);
+    let (contract_id, bridge, _admin, _, _, _) = setup_bridge(&env);
 
     bridge.pause();
     bridge.unpause();

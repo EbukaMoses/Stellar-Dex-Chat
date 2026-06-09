@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import AuditTable from '../AuditTable';
 import { toastStore } from '@/lib/toastStore';
@@ -296,7 +296,7 @@ describe('AuditTable', () => {
   });
 
   it('banner count label is accessible via aria-label', async () => {
-    let isOnline = false;
+    const isOnline = false;
     Object.defineProperty(window.navigator, 'onLine', {
       configurable: true,
       get: () => isOnline,

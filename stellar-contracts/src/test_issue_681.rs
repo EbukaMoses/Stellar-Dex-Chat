@@ -55,7 +55,7 @@ fn test_heartbeat_blocked_by_circuit_breaker() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_, bridge, admin, _, _, _) = setup_bridge(&env);
+    let (_, bridge, _admin, _, _, _) = setup_bridge(&env);
     let operator = Address::generate(&env);
 
     // Setup operator
