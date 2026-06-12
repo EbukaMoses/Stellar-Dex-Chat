@@ -3,8 +3,13 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import AdminDashboard from '../page';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 // Mock dependencies
+vi.mock('@/contexts/ThemeContext', () => ({
+  useTheme: () => ({ isDarkMode: false, toggleDarkMode: vi.fn() }),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 vi.mock('@/hooks/useFeatureFlag', () => ({
   useFeatureFlag: vi.fn(() => false),
 }));
@@ -60,7 +65,7 @@ describe('AdminDashboard - Dark Mode Support', () => {
 
   it('renders with theme-aware classes', async () => {
     await act(async () => {
-      render(<AdminDashboard />);
+      render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
     });
 
     await waitFor(() => {
@@ -73,7 +78,7 @@ describe('AdminDashboard - Dark Mode Support', () => {
   });
 
   it('applies CSS tokens for colors — no raw Tailwind colour classes remain', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -93,7 +98,7 @@ describe('AdminDashboard - Dark Mode Support', () => {
   });
 
   it('uses theme utility classes for surfaces', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Bridge Balance')).toBeInTheDocument();
@@ -104,7 +109,7 @@ describe('AdminDashboard - Dark Mode Support', () => {
   });
 
   it('uses theme utility classes for text', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -115,14 +120,14 @@ describe('AdminDashboard - Dark Mode Support', () => {
   });
 
   it('handles loading state with theme classes', () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     const loadingText = screen.getByText('Loading metrics...');
     expect(loadingText.className).toContain('theme-text-muted');
   });
 
   it('includes proper ARIA accessibility labels', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -193,7 +198,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
   });
 
   it('updates page number immediately when pagination button is clicked (optimistic UI)', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -209,7 +214,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
   });
 
   it('updates filter immediately when action filter is changed (optimistic UI)', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -226,7 +231,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
   });
 
   it('shows optimistic success state for CSV export', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -247,7 +252,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
       Promise.reject(new Error('Network error'))
     );
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -267,7 +272,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
       Promise.reject(new Error('Network error'))
     );
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -287,7 +292,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
       Promise.reject(new Error('Export failed'))
     );
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -310,7 +315,7 @@ describe('AdminDashboard - Optimistic UI Updates', () => {
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValue(fetchPromise);
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -376,7 +381,7 @@ describe('AdminDashboard - Clipboard copy button (#834)', () => {
   });
 
   it('renders copy buttons for the address, timestamp and parameters columns', async () => {
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     expect(
       await screen.findByRole('button', {
@@ -395,7 +400,7 @@ describe('AdminDashboard - Clipboard copy button (#834)', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     const copyButton = await screen.findByRole('button', {
       name: /copy admin address GTEST123/i,
@@ -412,7 +417,7 @@ describe('AdminDashboard - Clipboard copy button (#834)', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     const copyButton = await screen.findByRole('button', {
       name: /copy parameters/i,
@@ -429,7 +434,7 @@ describe('AdminDashboard - Clipboard copy button (#834)', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     const copyButton = await screen.findByRole('button', {
       name: /copy timestamp/i,
@@ -446,7 +451,7 @@ describe('AdminDashboard - Clipboard copy button (#834)', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     const copyButton = await screen.findByRole('button', {
       name: /copy admin address GTEST123/i,
@@ -480,7 +485,7 @@ describe('AdminDashboard - ErrorBoundary protection', () => {
       throw new Error('Simulated runtime crash');
     });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to load dashboard/i)).toBeInTheDocument();
@@ -507,7 +512,7 @@ describe('AdminDashboard - ErrorBoundary protection', () => {
       throw new Error('Simulated crash');
     });
 
-    render(<AdminDashboard />);
+    render(<ThemeProvider><AdminDashboard /></ThemeProvider>);
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to load dashboard/i)).toBeInTheDocument();
