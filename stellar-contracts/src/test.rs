@@ -3030,8 +3030,7 @@ fn test_event_version_get_receipt_by_index() {
     // get_receipt_by_index is a read-only query and does not emit events;
     // verify the receipt is returned with the expected versioned deposit id.
     let receipt = bridge.get_receipt_by_index(&0);
-    assert!(receipt.is_ok());
-    assert_eq!(receipt.unwrap().amount, 100);
+    assert_eq!(receipt.amount, 100);
 }
 
 #[test]

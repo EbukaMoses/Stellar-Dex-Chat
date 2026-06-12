@@ -556,6 +556,29 @@ pub struct FeeVaultThresholdEvent {
 
 #[contractevent]
 #[derive(Clone, Debug)]
+pub struct MultisigProposedEvent {
+    pub version: u32,
+    pub id: u64,
+    pub proposer: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MultisigApprovedEvent {
+    pub version: u32,
+    pub id: u64,
+    pub signer: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct MultisigExecutedEvent {
+    pub version: u32,
+    pub id: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
 pub struct SetLimitEvent {
     pub version: u32,
     pub token: Address,
@@ -5843,10 +5866,12 @@ impl FiatBridge {
             .instance()
             .set(&DataKey::MultisigProposal(id), &proposal);
 
-        env.events().publish(
-            (EVENT_VERSION, Symbol::new(&env, "multisig_proposed")),
-            (id, proposer),
-        );
+        MultisigProposedEvent {
+            version: EVENT_VERSION,
+            id,
+            proposer,
+        }
+        .publish(&env);
 
         Ok(id)
     }
@@ -5878,10 +5903,12 @@ impl FiatBridge {
             .instance()
             .set(&DataKey::MultisigProposal(id), &proposal);
 
-        env.events().publish(
-            (EVENT_VERSION, Symbol::new(&env, "multisig_approved")),
-            (id, signer),
-        );
+        MultisigApprovedEvent {
+            version: EVENT_VERSION,
+            id,
+            signer,
+        }
+        .publish(&env);
 
         Ok(())
     }
@@ -5943,8 +5970,11 @@ impl FiatBridge {
             .instance()
             .set(&DataKey::MultisigProposal(id), &proposal);
 
-        env.events()
-            .publish((EVENT_VERSION, Symbol::new(&env, "multisig_executed")), id);
+        MultisigExecutedEvent {
+            version: EVENT_VERSION,
+            id,
+        }
+        .publish(&env);
 
         Ok(())
     }
