@@ -24,10 +24,10 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: stellar-contracts -> target
+          workspaces: Dechat/stellar-contracts -> target
 
       - name: Run clippy (deny warnings)
-        run: cd stellar-contracts && cargo clippy --all-targets --all-features -- -D warnings
+        run: cd Dechat/stellar-contracts && cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run contract tests
-        run: cd stellar-contracts && cargo test
+        run: cd Dechat/stellar-contracts && cargo test

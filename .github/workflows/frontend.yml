@@ -4,12 +4,12 @@ on:
   pull_request:
     branches: [main, add_Soroban_invariant_test]
     paths:
-      - "dex_with_fiat_frontend/**"
+      - "Dechat/dex_with_fiat_frontend/**"
       - ".github/workflows/frontend.yml"
   push:
     branches: [main, add_Soroban_invariant_test]
     paths:
-      - "dex_with_fiat_frontend/**"
+      - "Dechat/dex_with_fiat_frontend/**"
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: dex_with_fiat_frontend
+        working-directory: Dechat/dex_with_fiat_frontend
 
     steps:
       - name: Checkout repository
@@ -35,9 +35,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
-          cache-dependency-path: dex_with_fiat_frontend/pnpm-lock.yaml
+          cache-dependency-path: Dechat/dex_with_fiat_frontend/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install
