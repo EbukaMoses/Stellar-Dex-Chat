@@ -1,4 +1,4 @@
-# DEX-CHAT - AI-Powered Asset to Fiat Bridge on Stellar
+# Dechat - AI-Powered Asset to Fiat Bridge on Stellar
 
 A decentralized exchange (DEX) interface prioritizing seamless asset-to-bank conversions leveraging AI-assisted conversations and automated Soroban smart contracts on the Stellar network.
 
@@ -10,7 +10,7 @@ A decentralized exchange (DEX) interface prioritizing seamless asset-to-bank con
 
 ## Overview
 
-DEX-CHAT connects natural AI conversation flows with Stellar's fast blockchain technology to create an intuitive platform for cryptocurrency to fiat conversions. Users interact with an AI assistant that securely triggers smart contract interactions (utilizing Soroban) directly from the chat UI.
+Dechat connects natural AI conversation flows with Stellar's fast blockchain technology to create an intuitive platform for cryptocurrency to fiat conversions. Users interact with an AI assistant that securely triggers smart contract interactions (utilizing Soroban) directly from the chat UI.
 
 ### Key Features
 
@@ -180,8 +180,8 @@ If you prefer to run services individually or need more control:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/leojay-net/DEX-CHAT.git
-cd DEX-CHAT
+git clone https://github.com/leojay-net/Dechat.git
+cd Dechat
 ```
 
 ### 2. Smart Contract Setup
