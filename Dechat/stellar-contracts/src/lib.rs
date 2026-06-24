@@ -112,6 +112,8 @@ pub enum Error {
     UpgradeNotReady = 605,
     UpgradeProposalMissing = 606,
     UpgradeDelayTooShort = 607,
+    /// Returned by `accept_admin` when the 48-hour mandatory delay has not yet elapsed.
+    AdminTransferTooEarly = 608,
 
     // --- 700 series: External Services ---
     OracleNotSet = 701,
@@ -396,6 +398,8 @@ pub struct BatchResult {
 pub struct ConfigSnapshot {
     pub admin: Address,
     pub pending_admin: Option<Address>,
+    /// Ledger at which the pending admin transfer was proposed; None when no transfer is in progress.
+    pub pending_admin_proposed_at: Option<u32>,
     pub token: Address,
     pub oracle: Option<Address>,
     pub fiat_limit: Option<i128>,
@@ -926,6 +930,11 @@ pub enum DataKey {
     SetLimitMaxCap,
     // ── Issue #fee_withdrawal_nonce: replay-protection nonce per admin ────
     FeeWithdrawalNonce(Address),
+    // ── Issue #970: 48-hour admin transfer timelock ───────────────────────
+    /// Ledger sequence number at which `transfer_admin` was called.
+    /// Stored alongside `PendingAdmin`; `accept_admin` checks that
+    /// `current_ledger >= proposed_at + MIN_TIMELOCK_DELAY` before completing.
+    AdminTransferProposedAt,
 
 }
 
@@ -2361,13 +2370,15 @@ impl FiatBridge {
         Ok(())
     }
 
-    /// Initiates a transfer of the administrative role to a new address.
+    /// Proposes a transfer of the administrative role to `new_admin`.
     ///
-    /// Follows a two-step transfer pattern:
-    /// 1. Current admin calls `transfer_admin(new_address)`.
-    /// 2. `new_address` must call `accept_admin()` to complete the transfer.
-    ///
-    /// This prevents accidental lockouts if the wrong address is provided.
+    /// Follows a three-step, time-locked transfer pattern (#970):
+    /// 1. Current admin calls `transfer_admin(new_admin)` — records the proposal
+    ///    and the current ledger as the proposal timestamp.
+    /// 2. At least 48 hours (≈ 34 560 ledgers) must pass before acceptance.
+    /// 3. `new_admin` calls `accept_admin()` to complete the transfer.
+    ///    The original admin may call `cancel_admin_transfer()` at any time
+    ///    during the waiting period to abort the transfer.
     pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
         let admin: Address = env
             .storage()
@@ -2378,16 +2389,21 @@ impl FiatBridge {
         if new_admin == admin {
             return Err(Error::SameAdmin);
         }
+        let proposed_at: u32 = env.ledger().sequence();
         env.storage()
             .instance()
             .set(&DataKey::PendingAdmin, &new_admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::AdminTransferProposedAt, &proposed_at);
         Ok(())
     }
 
-    /// Finalizes the administrative transfer process.
+    /// Finalizes the administrative transfer after the 48-hour mandatory delay.
     ///
-    /// Must be called by the `pending_admin` address set in a previous
-    /// `transfer_admin` call.
+    /// Must be called by the `pending_admin` set in `transfer_admin`.
+    /// Reverts with [`Error::AdminTransferTooEarly`] if fewer than
+    /// [`MIN_TIMELOCK_DELAY`] ledgers have elapsed since the proposal.
     pub fn accept_admin(env: Env) -> Result<(), Error> {
         let pending: Address = env
             .storage()
@@ -2395,8 +2411,44 @@ impl FiatBridge {
             .get(&DataKey::PendingAdmin)
             .ok_or(Error::NoPendingAdmin)?;
         pending.require_auth();
+
+        // Enforce the 48-hour mandatory delay before the transfer can be accepted.
+        let proposed_at: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AdminTransferProposedAt)
+            .unwrap_or(0);
+        let current = env.ledger().sequence();
+        let earliest_accept = proposed_at.saturating_add(MIN_TIMELOCK_DELAY);
+        if current < earliest_accept {
+            return Err(Error::AdminTransferTooEarly);
+        }
+
         env.storage().instance().set(&DataKey::Admin, &pending);
         env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.storage().instance().remove(&DataKey::AdminTransferProposedAt);
+        Ok(())
+    }
+
+    /// Cancels a pending admin transfer proposal.
+    ///
+    /// May only be called by the **current admin** and only while a pending
+    /// transfer exists.  Clears both the pending address and the proposal
+    /// timestamp, allowing a fresh `transfer_admin` call when appropriate.
+    pub fn cancel_admin_transfer(env: Env) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        if !env.storage().instance().has(&DataKey::PendingAdmin) {
+            return Err(Error::NoPendingAdmin);
+        }
+
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.storage().instance().remove(&DataKey::AdminTransferProposedAt);
         Ok(())
     }
 
@@ -4345,6 +4397,7 @@ impl FiatBridge {
         Ok(ConfigSnapshot {
             admin,
             pending_admin: env.storage().instance().get(&DataKey::PendingAdmin),
+            pending_admin_proposed_at: env.storage().instance().get(&DataKey::AdminTransferProposedAt),
             token,
             oracle: env.storage().instance().get(&DataKey::Oracle),
             fiat_limit: env.storage().instance().get(&DataKey::FiatLimit),
@@ -5999,3 +6052,6 @@ mod test_issue_676;
 
 #[cfg(test)]
 mod test_issue_681;
+
+#[cfg(test)]
+mod test_issue_970;
