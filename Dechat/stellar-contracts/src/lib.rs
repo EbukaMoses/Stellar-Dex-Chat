@@ -981,6 +981,8 @@ pub enum DataKey {
     /// Stored alongside `PendingAdmin`; `accept_admin` checks that
     /// `current_ledger >= proposed_at + MIN_TIMELOCK_DELAY` before completing.
     AdminTransferProposedAt,
+    // ── Issue #fee_vault_threshold: per-token fee vault threshold ────────
+    FeeVaultThreshold(Address),
 
 }
 

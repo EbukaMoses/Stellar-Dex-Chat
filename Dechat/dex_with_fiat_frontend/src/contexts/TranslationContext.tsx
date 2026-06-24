@@ -45,15 +45,18 @@ function detectBrowserLocale(): SupportedLocale {
 }
 
 export function TranslationProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocale] = useState(() => {
+  const [locale, setLocaleState] = useState<SupportedLocale>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('locale') || 'en';
+      const stored = localStorage.getItem('locale');
+      if (stored && SUPPORTED_LOCALES.includes(stored as SupportedLocale)) {
+        return stored as SupportedLocale;
+      }
     }
     return 'en';
   });
 
-  const handleSetLocale = useCallback((newLocale: string) => {
-    setLocale(newLocale);
+  const handleSetLocale = useCallback((newLocale: SupportedLocale) => {
+    setLocaleState(newLocale);
     localStorage.setItem('locale', newLocale);
   }, []);
 

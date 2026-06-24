@@ -363,6 +363,9 @@ fn test_transfer_admin() {
     let new_admin = Address::generate(&env);
 
     bridge.transfer_admin(&new_admin);
+    env.ledger().with_mut(|l| {
+        l.sequence_number = l.sequence_number.saturating_add(MIN_TIMELOCK_DELAY);
+    });
     bridge.accept_admin();
 
     assert_eq!(bridge.get_admin(), new_admin);
@@ -2520,6 +2523,9 @@ fn test_deploy_config_hash_is_immutable() {
     // Even after changing admin the stored hash must not change
     let new_admin = Address::generate(&env);
     bridge.transfer_admin(&new_admin);
+    env.ledger().with_mut(|l| {
+        l.sequence_number = l.sequence_number.saturating_add(MIN_TIMELOCK_DELAY);
+    });
     bridge.accept_admin();
 
     let hash_after = bridge.get_deploy_config_hash();

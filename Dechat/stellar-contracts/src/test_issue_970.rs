@@ -2,14 +2,23 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Ledger, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env, Vec,
+};
 
-use crate::{Error, FiatBridge, MIN_TIMELOCK_DELAY};
+use crate::{Error, FiatBridge, FiatBridgeClient, MIN_TIMELOCK_DELAY};
 
 fn env_with_sequence(seq: u32) -> Env {
     let env = Env::default();
     env.ledger().with_mut(|l| l.sequence_number = seq);
     env
+}
+
+fn init_client(env: &Env, client: &FiatBridgeClient, admin: &Address, token: &Address) {
+    let mut signers = Vec::new(env);
+    signers.push_back(admin.clone());
+    client.init(admin, token, &1_000_000, &100, &signers, &1);
 }
 
 /// `accept_admin` must fail with AdminTransferTooEarly if called before the delay.
@@ -18,14 +27,14 @@ fn accept_admin_before_delay_returns_too_early() {
     let env = env_with_sequence(1000);
     env.mock_all_auths();
 
-    let admin = soroban_sdk::Address::generate(&env);
-    let new_admin = soroban_sdk::Address::generate(&env);
-    let token = soroban_sdk::Address::generate(&env);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token = Address::generate(&env);
 
     let contract_id = env.register(FiatBridge, ());
-    let client = crate::FiatBridgeClient::new(&env, &contract_id);
+    let client = FiatBridgeClient::new(&env, &contract_id);
 
-    client.init(&admin, &token, &soroban_sdk::Vec::new(&env), &1);
+    init_client(&env, &client, &admin, &token);
     client.transfer_admin(&new_admin);
 
     // Advance ledger by less than MIN_TIMELOCK_DELAY.
@@ -43,14 +52,14 @@ fn accept_admin_at_delay_boundary_succeeds() {
     let env = env_with_sequence(1000);
     env.mock_all_auths();
 
-    let admin = soroban_sdk::Address::generate(&env);
-    let new_admin = soroban_sdk::Address::generate(&env);
-    let token = soroban_sdk::Address::generate(&env);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token = Address::generate(&env);
 
     let contract_id = env.register(FiatBridge, ());
-    let client = crate::FiatBridgeClient::new(&env, &contract_id);
+    let client = FiatBridgeClient::new(&env, &contract_id);
 
-    client.init(&admin, &token, &soroban_sdk::Vec::new(&env), &1);
+    init_client(&env, &client, &admin, &token);
     client.transfer_admin(&new_admin);
 
     // Advance ledger to exactly the unlock boundary.
@@ -68,14 +77,14 @@ fn cancel_admin_transfer_removes_pending() {
     let env = env_with_sequence(1000);
     env.mock_all_auths();
 
-    let admin = soroban_sdk::Address::generate(&env);
-    let new_admin = soroban_sdk::Address::generate(&env);
-    let token = soroban_sdk::Address::generate(&env);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token = Address::generate(&env);
 
     let contract_id = env.register(FiatBridge, ());
-    let client = crate::FiatBridgeClient::new(&env, &contract_id);
+    let client = FiatBridgeClient::new(&env, &contract_id);
 
-    client.init(&admin, &token, &soroban_sdk::Vec::new(&env), &1);
+    init_client(&env, &client, &admin, &token);
     client.transfer_admin(&new_admin);
     client.cancel_admin_transfer();
 
@@ -94,13 +103,13 @@ fn cancel_when_no_pending_returns_error() {
     let env = env_with_sequence(1000);
     env.mock_all_auths();
 
-    let admin = soroban_sdk::Address::generate(&env);
-    let token = soroban_sdk::Address::generate(&env);
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
 
     let contract_id = env.register(FiatBridge, ());
-    let client = crate::FiatBridgeClient::new(&env, &contract_id);
+    let client = FiatBridgeClient::new(&env, &contract_id);
 
-    client.init(&admin, &token, &soroban_sdk::Vec::new(&env), &1);
+    init_client(&env, &client, &admin, &token);
 
     let result = client.try_cancel_admin_transfer();
     assert_eq!(result, Err(Ok(Error::NoPendingAdmin)));
@@ -112,14 +121,14 @@ fn config_snapshot_includes_proposed_at() {
     let env = env_with_sequence(5000);
     env.mock_all_auths();
 
-    let admin = soroban_sdk::Address::generate(&env);
-    let new_admin = soroban_sdk::Address::generate(&env);
-    let token = soroban_sdk::Address::generate(&env);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token = Address::generate(&env);
 
     let contract_id = env.register(FiatBridge, ());
-    let client = crate::FiatBridgeClient::new(&env, &contract_id);
+    let client = FiatBridgeClient::new(&env, &contract_id);
 
-    client.init(&admin, &token, &soroban_sdk::Vec::new(&env), &1);
+    init_client(&env, &client, &admin, &token);
     client.transfer_admin(&new_admin);
 
     let snapshot = client.get_config_snapshot();

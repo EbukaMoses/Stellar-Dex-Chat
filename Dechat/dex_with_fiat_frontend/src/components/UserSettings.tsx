@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { X, Check, Plus, Trash2, Edit2 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useTranslation } from '@/contexts/TranslationContext';
+import { useTranslation, SupportedLocale } from '@/contexts/TranslationContext';
 import {
   SUPPORTED_FIAT_CURRENCIES,
   FiatCurrencyCode,
@@ -400,9 +400,11 @@ export default function UserSettings({ isOpen, onClose }: UserSettingsProps) {
               aria-label="Select language"
               className="space-y-1"
             >
-              {[
+              {([
                 { code: 'en', label: 'English' },
-              ].map(({ code, label }) => {
+                { code: 'fr', label: 'Français' },
+                { code: 'es', label: 'Español' },
+              ] as const satisfies ReadonlyArray<{ code: SupportedLocale; label: string }>).map(({ code, label }) => {
                 const isSelected = locale === code;
                 return (
                   <li key={code}>
