@@ -1,13 +1,13 @@
 const path = require("node:path");
 
 const rootDir = process.cwd();
-const frontendDir = path.join(rootDir, "dex_with_fiat_frontend");
+const frontendDir = path.join(rootDir, "Dechat/dex_with_fiat_frontend");
 
 const toPosix = (value) => value.split(path.sep).join("/");
 
 module.exports = {
-  "stellar-contracts/**/*.rs": () => "npm run precommit:clippy",
-  "dex_with_fiat_frontend/**/*.{ts,tsx}": (files) => {
+  "Dechat/stellar-contracts/**/*.rs": () => "npm run precommit:clippy",
+  "Dechat/dex_with_fiat_frontend/**/*.{ts,tsx}": (files) => {
     if (!files.length) return [];
     const fileArgs = files
       .map((file) => path.relative(frontendDir, file))

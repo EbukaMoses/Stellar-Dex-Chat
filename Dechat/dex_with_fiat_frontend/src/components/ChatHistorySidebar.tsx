@@ -1,0 +1,1027 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import { useChatHistory } from '@/hooks/useChatHistory';
+import { useTxHistory } from '@/hooks/useTxHistory';
+import { useStellarWallet } from '@/contexts/StellarWalletContext';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import {
+  MessageSquare,
+  Trash2,
+  Search,
+  X,
+  Clock,
+  Plus,
+  Download,
+  Coins,
+  Pin,
+  PinOff,
+  FileJson,
+  FileText,
+  Activity,
+  ArrowUpRight,
+  ArrowDownLeft,
+} from 'lucide-react';
+import SkeletonSidebar from '@/components/ui/skeleton/SkeletonSidebar';
+import EmptyState from '@/components/ui/EmptyState';
+import PriceTicker from '@/components/PriceTicker';
+
+import { ChatSession } from '@/types';
+import { ContractEvent } from '@/types/events';
+import { useSessionPagination } from '@/hooks/useSessionPagination';
+
+interface SessionRowProps {
+  session: ChatSession;
+  isActive: boolean;
+  onLoad: (id: string) => void;
+  onExportJSON: (id: string) => void;
+  onExportTXT: (id: string) => void;
+  onDelete: (id: string) => void;
+  onTogglePin: (id: string) => void;
+  formatDate: (d: Date) => string;
+  recentlyToggledPinId?: string | null;
+}
+
+function SessionRow({
+  session,
+  isActive,
+  onLoad,
+  onExportJSON,
+  onExportTXT,
+  onDelete,
+  onTogglePin,
+  formatDate,
+  recentlyToggledPinId,
+}: SessionRowProps) {
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
+  return (
+    <div
+      data-active={isActive ? 'true' : 'false'}
+      className={`group relative p-3 mb-2 rounded-lg cursor-pointer transition-all duration-200 border ${
+        isActive
+          ? 'bg-[var(--color-primary-soft)] border-[var(--color-primary)] shadow-md'
+          : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'
+      }`}
+      onClick={() => onLoad(session.id)}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <h3 className="theme-text-primary text-sm font-medium truncate">
+            {session.title || 'New Conversation'}
+          </h3>
+          <div className="theme-text-muted flex items-center mt-1 text-xs">
+            <Clock className="w-3 h-3 mr-1" />
+            <span>
+              {formatDate(
+                session.lastUpdated || session.createdAt || new Date(),
+              )}
+            </span>
+            <span className="ml-2">
+              {session.messages?.length || 0} messages
+            </span>
+          </div>
+          {session.messages && session.messages.length > 0 && (
+            <p className="theme-text-secondary text-xs mt-1 truncate">
+              {session.messages[
+                session.messages.length - 1
+              ]?.content?.substring(0, 50)}
+              ...
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin(session.id);
+            }}
+            className="theme-text-muted hover:bg-[var(--color-primary-soft)] p-1 rounded transition-all hover:scale-110"
+            title={session.pinned ? 'Unpin conversation' : 'Pin conversation'}
+          >
+            {session.pinned ? (
+              <PinOff
+                className={`w-3 h-3${
+                  recentlyToggledPinId === session.id
+                    ? ' animate-bounce-once'
+                    : ''
+                }`}
+              />
+            ) : (
+              <Pin
+                className={`w-3 h-3${
+                  recentlyToggledPinId === session.id
+                    ? ' animate-bounce-once'
+                    : ''
+                }`}
+              />
+            )}
+          </button>
+
+          {/* Export Menu */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowExportMenu(!showExportMenu);
+              }}
+              className="theme-text-muted hover:bg-[var(--color-primary-soft)] p-1 rounded transition-all hover:scale-110"
+              title="Export conversation"
+            >
+              <Download className="w-3 h-3" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg z-50 min-w-max">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExportJSON(session.id);
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs font-medium theme-text-primary hover:bg-[var(--color-surface-muted)] flex items-center gap-2 transition-colors rounded-t-lg"
+                >
+                  <FileJson className="w-3 h-3" />
+                  Export JSON
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExportTXT(session.id);
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs font-medium theme-text-primary hover:bg-[var(--color-surface-muted)] flex items-center gap-2 transition-colors rounded-b-lg"
+                >
+                  <FileText className="w-3 h-3" />
+                  Export TXT
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(session.id);
+            }}
+            className="theme-text-muted hover:bg-[var(--color-danger-soft)] p-1 rounded transition-all hover:scale-110"
+            title="Delete conversation"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ChatHistorySidebarProps {
+  onLoadSession: (sessionId: string) => void;
+  onClose?: () => void;
+  isCollapsed?: boolean;
+}
+
+const UNDO_TIMEOUT_MS = 5_000;
+
+export default function ChatHistorySidebar({
+  onLoadSession,
+  onClose,
+  isCollapsed = false,
+}: ChatHistorySidebarProps) {
+  const {
+    pinnedSessions,
+    unpinnedSessions,
+    currentSessionId,
+    deleteSession,
+    clearAllHistory,
+    exportSessionAsJSON,
+    exportSessionAsTXT,
+    searchSessions,
+    togglePin,
+    hasHistory,
+    sessions: allSessionsRaw,
+    reorderPinned,
+  } = useChatHistory();
+  const { entries, clearEntries, updateEntry } = useTxHistory();
+  const { connection } = useStellarWallet();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+    null,
+  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [contractEvents, setContractEvents] = useState<ContractEvent[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+
+  // ── Optimistic UI state ──────────────────────────────────────────────────
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [recentlyToggledPinId, setRecentlyToggledPinId] = useState<
+    string | null
+  >(null);
+  const pinAnimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [pendingClearAll, setPendingClearAll] = useState(false);
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stashedSessionsRef = useRef<ChatSession[]>([]);
+  // ────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      setIsLoadingEvents(true);
+      try {
+        const res = await fetch('/api/events?limit=5');
+        if (res.ok) {
+          const data = await res.json();
+          setContractEvents(data.events);
+        }
+      } catch (err) {
+        console.error('Failed to fetch contract events:', err);
+      } finally {
+        setIsLoadingEvents(false);
+      }
+    };
+
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 60000); // Refresh every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      if (pinAnimTimerRef.current) clearTimeout(pinAnimTimerRef.current);
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    };
+  }, []);
+
+  const allSessions = [...pinnedSessions, ...unpinnedSessions];
+  // Filter out the session that is pending deletion so it disappears immediately
+  const visibleSessions = pendingDeleteId
+    ? allSessions.filter((s) => s.id !== pendingDeleteId)
+    : allSessions;
+  const filteredSessions = searchQuery
+    ? searchSessions(searchQuery).filter((s) => s.id !== pendingDeleteId)
+    : visibleSessions;
+  const filteredPinned = filteredSessions.filter((s) => s.pinned);
+  const filteredUnpinned = filteredSessions.filter((s) => !s.pinned);
+  const filteredSessionIds = filteredSessions.map((s) => s.id).join(',');
+  const historyListRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollSnapshotRef = useRef<{ top: number; height: number } | null>(null);
+  const draggedIdRef = useRef<string | null>(null);
+  const dragOverIdRef = useRef<string | null>(null);
+
+  const onDragStart = useCallback((e: React.DragEvent, id: string) => {
+    draggedIdRef.current = id;
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', id);
+    } catch {}
+  }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    dragOverIdRef.current = id;
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(() => {
+    const fromId = draggedIdRef.current;
+    const toId = dragOverIdRef.current;
+    if (!fromId || !toId || fromId === toId) return;
+
+    const pinnedIds = filteredPinned.map((s) => s.id);
+    const fromIndex = pinnedIds.indexOf(fromId);
+    const toIndex = pinnedIds.indexOf(toId);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    const reordered = [...pinnedIds];
+    // remove fromIndex
+    reordered.splice(fromIndex, 1);
+    // insert at toIndex
+    reordered.splice(toIndex, 0, fromId);
+
+    reorderPinned(reordered);
+    draggedIdRef.current = null;
+    dragOverIdRef.current = null;
+  }, [filteredPinned, reorderPinned]);
+
+  const movePinned = useCallback((id: string, direction: 'up' | 'down') => {
+    const pinnedIds = filteredPinned.map((s) => s.id);
+    const idx = pinnedIds.indexOf(id);
+    if (idx === -1) return;
+    const target = direction === 'up' ? idx - 1 : idx + 1;
+    if (target < 0 || target >= pinnedIds.length) return;
+    const reordered = [...pinnedIds];
+    const [item] = reordered.splice(idx, 1);
+    reordered.splice(target, 0, item);
+    reorderPinned(reordered);
+  }, [filteredPinned, reorderPinned]);
+
+  // Windowed rendering for unpinned sessions
+  const {
+    visibleItems: visibleUnpinned,
+    hasMore: unpinnedHasMore,
+    isLoadingMore: unpinnedIsLoadingMore,
+    loadMore: loadMoreUnpinned,
+    setVisibleCount: setUnpinnedVisibleCount,
+  } = useSessionPagination(filteredUnpinned, 60);
+
+  useEffect(() => {
+    if (isCollapsed || isLoading) return;
+
+    const activeRow = historyListRef.current?.querySelector<HTMLElement>(
+      '[data-active="true"]',
+    );
+    if (!activeRow) return;
+
+    activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [currentSessionId, filteredSessionIds, isCollapsed, isLoading]);
+
+  // If active session is outside the current visible window, expand the window to include it.
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const idx = filteredUnpinned.findIndex((s) => s.id === currentSessionId);
+    if (idx === -1) return;
+
+    const neededVisible = filteredUnpinned.length - idx;
+    if (neededVisible > visibleUnpinned.length) {
+      setUnpinnedVisibleCount(Math.min(filteredUnpinned.length, neededVisible));
+    }
+  }, [currentSessionId, filteredUnpinned, visibleUnpinned.length, setUnpinnedVisibleCount]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    if (el.scrollTop < 160 && unpinnedHasMore && !unpinnedIsLoadingMore) {
+      // take a snapshot so we can preserve visual position after loading
+      scrollSnapshotRef.current = { top: el.scrollTop, height: el.scrollHeight };
+      loadMoreUnpinned();
+    }
+  }, [unpinnedHasMore, unpinnedIsLoadingMore, loadMoreUnpinned]);
+
+  // When a loadMore finishes, restore scroll position to avoid jump
+  useEffect(() => {
+    if (unpinnedIsLoadingMore) return;
+    const snap = scrollSnapshotRef.current;
+    const el = scrollContainerRef.current;
+    if (snap && el) {
+      const newHeight = el.scrollHeight;
+      el.scrollTop = newHeight - snap.height + snap.top;
+      scrollSnapshotRef.current = null;
+    }
+  }, [unpinnedIsLoadingMore]);
+
+  // ── Optimistic delete with undo ──────────────────────────────────────────
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      setShowDeleteConfirm(null);
+      setPendingDeleteId(sessionId);
+
+      // Clear any previous delete timer
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+
+      deleteTimerRef.current = setTimeout(() => {
+        deleteSession(sessionId);
+        setPendingDeleteId(null);
+      }, UNDO_TIMEOUT_MS);
+    },
+    [deleteSession],
+  );
+
+  const undoDelete = useCallback(() => {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setPendingDeleteId(null);
+  }, []);
+
+  // ── Optimistic pin toggle with animation ─────────────────────────────────
+  const handleTogglePin = useCallback(
+    (sessionId: string) => {
+      togglePin(sessionId);
+      setRecentlyToggledPinId(sessionId);
+
+      if (pinAnimTimerRef.current) clearTimeout(pinAnimTimerRef.current);
+      pinAnimTimerRef.current = setTimeout(() => {
+        setRecentlyToggledPinId(null);
+      }, 600);
+    },
+    [togglePin],
+  );
+
+  // ── Optimistic clear-all with undo ───────────────────────────────────────
+  const handleClearAll = useCallback(() => {
+    // Stash sessions for potential undo
+    stashedSessionsRef.current = [...allSessionsRaw];
+    clearAllHistory();
+    setPendingClearAll(true);
+
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    clearTimerRef.current = setTimeout(() => {
+      stashedSessionsRef.current = [];
+      setPendingClearAll(false);
+    }, UNDO_TIMEOUT_MS);
+  }, [allSessionsRaw, clearAllHistory]);
+
+  const undoClearAll = useCallback(() => {
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    // Restore stashed sessions by re-saving to localStorage and reloading
+    if (stashedSessionsRef.current.length > 0) {
+      const restored = {
+        currentSessionId: null,
+        sessions: stashedSessionsRef.current,
+      };
+      localStorage.setItem('defi_chat_history', JSON.stringify(restored));
+      window.location.reload();
+    }
+    stashedSessionsRef.current = [];
+    setPendingClearAll(false);
+  }, []);
+
+  const handleExportSessionJSON = (sessionId: string) => {
+    const exportResult = exportSessionAsJSON(sessionId);
+    if (!exportResult) {
+      console.warn('Session not found or export failed');
+      return;
+    }
+
+    try {
+      const blob = new Blob([exportResult.data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportResult.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export session as JSON:', error);
+    }
+  };
+
+  const handleExportSessionTXT = (sessionId: string) => {
+    const exportResult = exportSessionAsTXT(sessionId);
+    if (!exportResult) {
+      console.warn('Session not found or export failed');
+      return;
+    }
+
+    try {
+      const blob = new Blob([exportResult.data], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportResult.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export session as TXT:', error);
+    }
+  };
+
+  const handleExportTransactions = () => {
+    const doc = new jsPDF();
+    const exportedAt = new Date();
+    const walletAddress = connection.address || 'Wallet not connected';
+    const exportRows = entries.filter((entry) => entry.kind !== 'risk_warning');
+    const fileDate = exportedAt.toISOString().slice(0, 10);
+
+    doc.setFontSize(16);
+    doc.text('Stellar Bridge Transaction History', 14, 18);
+    doc.setFontSize(10);
+    doc.text(
+      `Exported: ${exportedAt.toLocaleString()} | Records: ${exportRows.length}`,
+      14,
+      26,
+    );
+
+    const headers = ['Date', 'Type', 'Amount', 'Token', 'Receipt/Request ID'];
+    const columnXs = [14, 48, 88, 122, 148];
+    let y = 38;
+
+    headers.forEach((header, index) => {
+      doc.text(header, columnXs[index], y);
+    });
+
+    y += 6;
+    doc.line(14, y, 196, y);
+    y += 8;
+
+    if (exportRows.length === 0) {
+      doc.text('No transaction history available.', 14, y);
+      y += 10;
+    } else {
+      exportRows.forEach((entry) => {
+        if (y > 260) {
+          doc.addPage();
+          y = 20;
+        }
+
+        const row = [
+          entry.createdAt.toLocaleDateString(),
+          entry.kind === 'payout' ? 'Withdrawal' : 'Deposit',
+          entry.fiatAmount
+            ? `${entry.amount ?? '-'} / ${entry.fiatAmount}`
+            : (entry.amount ?? '-'),
+          entry.asset || entry.fiatCurrency || 'XLM',
+          entry.reference || entry.txHash || '-',
+        ];
+
+        row.forEach((value, index) => {
+          const maxWidth = index === 4 ? 42 : 28;
+          const lines = doc.splitTextToSize(String(value), maxWidth);
+          doc.text(lines, columnXs[index], y);
+        });
+
+        y += 12;
+      });
+    }
+
+    doc.setFontSize(9);
+    doc.text(`Wallet: ${walletAddress}`, 14, 280);
+    doc.text(`Export timestamp: ${exportedAt.toLocaleString()}`, 14, 286);
+    doc.save(`stellar-bridge-history-${fileDate}.pdf`);
+  };
+
+  const formatDate = (date: Date) => {
+    const now = new Date();
+    const diffTime = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
+  return (
+    <ErrorBoundary
+      title="Sidebar unavailable"
+      message="An unexpected error occurred in the chat history panel. Your conversations are safe."
+      retryLabel="Reload sidebar"
+    >
+      <div
+        className={`theme-surface theme-border h-full flex flex-col transition-all duration-300 border-r ${
+          isCollapsed ? 'w-20' : 'w-full'
+        } transition-colors duration-300`}
+      >
+        <div
+          className={`theme-border border-b transition-colors duration-300 ${
+            isCollapsed ? 'p-4 flex flex-col items-center' : 'p-4'
+          }`}
+        >
+          <div
+            className={`flex items-center justify-between mb-4 w-full ${
+              isCollapsed ? 'flex-col gap-4' : ''
+            }`}
+          >
+            {!isCollapsed && (
+              <h2 className="theme-text-primary text-lg font-semibold">
+                Activity
+              </h2>
+            )}
+            <div
+              className={`flex items-center gap-1 ${
+                isCollapsed ? 'flex-col' : ''
+              }`}
+            >
+              <button
+                onClick={handleClearAll}
+                className="theme-text-muted hover:bg-[var(--color-danger-soft)] p-2 rounded-lg transition-all duration-200 hover:scale-110"
+                title="Clear all history"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="theme-text-muted hover:bg-[var(--color-surface-muted)] p-2 rounded-lg transition-all duration-200 hover:scale-110 sm:hidden"
+                  title="Close"
+                  aria-label="Close chat history"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!isCollapsed && (
+            <div className="relative">
+              <Search className="theme-text-muted absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search conversations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="theme-input w-full pl-10 pr-4 py-2 rounded-lg text-sm border transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="theme-text-muted hover:theme-text-primary absolute right-3 top-1/2 transform -translate-y-1/2 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <SkeletonSidebar />
+          ) : (
+            <div className="flex flex-col h-full">
+              {/* Contract Activity Section */}
+              {!isCollapsed && (
+                <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)]">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-text-primary)] uppercase tracking-wider">
+                      <Activity className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                      <span>Bridge Activity</span>
+                    </div>
+                    {isLoadingEvents && (
+                      <div className="w-3 h-3 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                  </div>
+                  {contractEvents.length > 0 ? (
+                    <div className="space-y-2">
+                      {contractEvents.map((event) => (
+                        <div
+                          key={event.id}
+                          className="flex items-center justify-between text-[11px] group"
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            {event.type === 'deposit' ? (
+                              <div className="p-1 rounded theme-soft-success">
+                                <ArrowDownLeft className="w-3 h-3" />
+                              </div>
+                            ) : (
+                              <div className="p-1 rounded theme-soft-warning">
+                                <ArrowUpRight className="w-3 h-3" />
+                              </div>
+                            )}
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-medium truncate text-[var(--color-text-secondary)]">
+                                {event.actor.slice(0, 4)}...
+                                {event.actor.slice(-4)}
+                              </span>
+                              <span className="text-[10px] text-[var(--color-text-muted)]">
+                                {new Date(
+                                  event.ledgerClosedAt,
+                                ).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                          <span
+                            className={`font-bold ${event.type === 'deposit' ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}`}
+                          >
+                            {event.type === 'deposit' ? '+' : '-'}
+                            {(
+                              parseFloat(event.amount) / 10000000
+                            ).toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-[var(--color-text-muted)] text-center py-2">
+                      No recent bridge activity
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div
+                ref={historyListRef}
+                className={`p-2 ${isCollapsed ? 'flex flex-col items-center' : ''}`}
+              >
+                {!hasHistory ? (
+                  <EmptyState
+                    icon={MessageSquare}
+                    title="No conversations yet"
+                    description="Start chatting to see your history here"
+                    cta={{
+                      label: 'New Conversation',
+                      onClick: () => window.location.reload(),
+                    }}
+                  />
+                ) : filteredSessions.length === 0 ? (
+                  <EmptyState
+                    icon={Search}
+                    title="No conversations found"
+                    description={`No results for "${searchQuery}"`}
+                    cta={{
+                      label: 'Clear search',
+                      onClick: () => setSearchQuery(''),
+                    }}
+                  />
+                ) : (
+                  <>
+                    {filteredPinned.length > 0 && (
+                      <>
+                        {!isCollapsed && (
+                          <p className="theme-text-muted text-xs font-semibold uppercase tracking-wider px-1 py-1 mt-1">
+                            Pinned
+                          </p>
+                        )}
+                        {filteredPinned.map((session, idx) => (
+                          <div
+                            key={session.id}
+                            draggable
+                            onDragStart={(e) => onDragStart(e, session.id)}
+                            onDragOver={(e) => onDragOver(e, session.id)}
+                            onDrop={onDrop}
+                            role="group"
+                            aria-roledescription="draggable pinned session"
+                            className="relative group"
+                          >
+                            <div className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                              <button
+                                aria-label="Reorder pinned up"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePinned(session.id, 'up');
+                                }}
+                                className="p-1 text-xs mr-1"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                aria-label="Reorder pinned down"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePinned(session.id, 'down');
+                                }}
+                                className="p-1 text-xs"
+                              >
+                                ▼
+                              </button>
+                            </div>
+
+                            <div className="pl-8">
+                              <SessionRow
+                                session={session}
+                                isActive={currentSessionId === session.id}
+                                onLoad={onLoadSession}
+                                onExportJSON={handleExportSessionJSON}
+                                onExportTXT={handleExportSessionTXT}
+                                onDelete={(id) => setShowDeleteConfirm(id)}
+                                onTogglePin={handleTogglePin}
+                                formatDate={formatDate}
+                                recentlyToggledPinId={recentlyToggledPinId}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {filteredUnpinned.length > 0 && (
+                      <>
+                        {!isCollapsed && (
+                          <p className="theme-text-muted text-xs font-semibold uppercase tracking-wider px-1 py-1 mt-3">
+                            Recent
+                          </p>
+                        )}
+                        {visibleUnpinned.map((session) => (
+                          <SessionRow
+                            key={session.id}
+                            session={session}
+                            isActive={currentSessionId === session.id}
+                            onLoad={onLoadSession}
+                            onExportJSON={handleExportSessionJSON}
+                            onExportTXT={handleExportSessionTXT}
+                            onDelete={(id) => setShowDeleteConfirm(id)}
+                            onTogglePin={handleTogglePin}
+                            formatDate={formatDate}
+                            recentlyToggledPinId={recentlyToggledPinId}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Undo toast ────────────────────────────────────────────────────── */}
+        {(pendingDeleteId || pendingClearAll) && (
+          <div
+            className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs font-medium border-t border-[var(--color-border)] bg-[var(--color-surface-muted)] animate-slide-up"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="theme-text-secondary">
+              {pendingClearAll ? 'History cleared' : 'Conversation deleted'}
+            </span>
+            <button
+              type="button"
+              onClick={pendingClearAll ? undoClearAll : undoDelete}
+              className="px-2.5 py-1 rounded-md text-[var(--color-primary)] font-semibold hover:bg-[var(--color-primary-soft)] transition-colors"
+            >
+              Undo
+            </button>
+          </div>
+        )}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+
+        <div
+          className={`theme-border border-t p-4 ${isCollapsed ? 'flex flex-col items-center' : ''}`}
+        >
+          <PriceTicker symbols={['XLM', 'ETH', 'BTC']} currency="usd" />
+
+          <div
+            className={`theme-border border-t p-4 ${isCollapsed ? 'flex flex-col items-center' : ''}`}
+          >
+            <div
+              className={`flex items-center justify-between mb-3 w-full ${isCollapsed ? 'flex-col gap-3' : ''}`}
+            >
+              <div className="flex items-center gap-2">
+                <Coins className="w-4 h-4 text-[var(--color-primary)]" />
+                {!isCollapsed && (
+                  <h3 className="theme-text-primary text-sm font-semibold">
+                    Transaction History
+                  </h3>
+                )}
+              </div>
+              {!isCollapsed && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleExportTransactions}
+                    className="theme-text-muted hover:bg-[var(--color-surface-muted)] p-1.5 rounded-md transition-colors"
+                    title="Export transaction history"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearEntries}
+                    className="theme-text-muted hover:bg-[var(--color-danger-soft)] p-1.5 rounded-md transition-colors"
+                    title="Clear transaction history"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isCollapsed ? (
+              <div className="flex justify-center">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-primary-soft)] flex items-center justify-center text-[var(--color-primary)] font-bold text-xs">
+                  {entries.length}
+                </div>
+              </div>
+            ) : entries.length === 0 ? (
+              <EmptyState
+                icon={Coins}
+                title="No transactions yet"
+                description="Deposits, payouts, risk checks, and notes will appear here."
+                className="py-3"
+              />
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {entries.slice(0, 8).map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="theme-surface-muted theme-border rounded-lg border p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="theme-text-primary text-xs font-semibold capitalize">
+                          {entry.kind.replace('_', ' ')}
+                        </p>
+                        <p className="theme-text-secondary text-xs mt-1">
+                          {entry.message}
+                        </p>
+                      </div>
+                      <span className="theme-text-muted text-[11px] whitespace-nowrap">
+                        {formatDate(entry.createdAt)}
+                      </span>
+                    </div>
+                    {(entry.amount || entry.fiatAmount) && (
+                      <p className="theme-text-muted text-[11px] mt-2">
+                        {entry.amount
+                          ? `${entry.amount} ${entry.asset || 'XLM'}`
+                          : ''}
+                        {entry.amount && entry.fiatAmount ? ' · ' : ''}
+                        {entry.fiatAmount
+                          ? `${entry.fiatAmount} ${entry.fiatCurrency || 'NGN'}`
+                          : ''}
+                      </p>
+                    )}
+                    {entry.note && (
+                      <p className="theme-text-primary text-xs mt-2">
+                        Note:{' '}
+                        <span className="theme-text-secondary">
+                          {entry.note}
+                        </span>
+                      </p>
+                    )}
+                    {entry.kind === 'payout' &&
+                      entry.status !== 'cancelled' &&
+                      entry.reference &&
+                      Date.now() - new Date(entry.createdAt).getTime() <
+                        2 * 60 * 1000 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(
+                                `/api/transfer-status/${entry.reference}`,
+                                { method: 'POST' },
+                              );
+                              const json = await res.json();
+                              if (json.success) {
+                                updateEntry(entry.id, {
+                                  status: 'cancelled',
+                                  message: 'Payout cancelled.',
+                                });
+                              }
+                            } catch (err) {
+                              console.error('Cancel error:', err);
+                            }
+                          }}
+                          className="mt-2 w-full flex items-center justify-center gap-1 theme-soft-danger hover:opacity-80 py-1.5 rounded text-xs font-medium transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" /> Cancel Payout
+                        </button>
+                      )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="theme-border p-4 border-t transition-colors duration-300">
+          <button
+            onClick={() => window.location.reload()}
+            className={`theme-primary-button w-full flex items-center justify-center rounded-lg transition-all duration-200 font-medium hover:scale-[1.02] ${isCollapsed ? 'p-2' : 'px-4 py-3'}`}
+            title="New Conversation"
+          >
+            <Plus className={`w-4 h-4 ${isCollapsed ? '' : 'mr-2'}`} />
+            {!isCollapsed && 'New Conversation'}
+          </button>
+        </div>
+
+        {showDeleteConfirm && (
+          <div className="theme-overlay fixed inset-0 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="theme-surface theme-border rounded-lg p-6 max-w-sm mx-4 shadow-2xl border">
+              <h3 className="theme-text-primary text-lg font-semibold mb-2">
+                Delete Conversation
+              </h3>
+              <p className="theme-text-secondary mb-4">
+                Are you sure you want to delete this conversation? This action
+                cannot be undone.
+              </p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="theme-secondary-button flex-1 px-4 py-2 rounded-lg transition-all duration-200 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() =>
+                    showDeleteConfirm && handleDeleteSession(showDeleteConfirm)
+                  }
+                  className="flex-1 px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all duration-200 font-medium"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </ErrorBoundary>
+  );
+}

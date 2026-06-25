@@ -1,0 +1,101 @@
+export interface Draft {
+  content: string;
+  timestamp: number;
+}
+
+const DRAFT_PREFIX = 'chat_draft_';
+const DEFAULT_TTL = 86400; // 24 hours in seconds
+
+/**
+ * Saves a message draft for a specific session.
+ */
+export const saveDraft = (sessionId: string, content: string): void => {
+  if (typeof window === 'undefined' || !sessionId) return;
+
+  if (!content.trim()) {
+    clearDraft(sessionId);
+    return;
+  }
+
+  const draft: Draft = {
+    content,
+    timestamp: Date.now(),
+  };
+  try {
+    // Use sessionStorage for transient per-tab drafts so they're preserved
+    // across background/foreground transitions but not across separate tabs.
+    sessionStorage.setItem(`${DRAFT_PREFIX}${sessionId}`, JSON.stringify(draft));
+  } catch (e) {
+    console.error('Failed to save draft to sessionStorage', e);
+  }
+};
+
+/**
+ * Retrieves a message draft for a specific session, checking for expiry.
+ */
+export const getDraft = (sessionId: string, ttlSeconds: number = DEFAULT_TTL): string | null => {
+  if (typeof window === 'undefined' || !sessionId) return null;
+
+  const item = localStorage.getItem(`${DRAFT_PREFIX}${sessionId}`);
+  if (!item) return null;
+
+  try {
+    const draft: Draft = JSON.parse(item);
+    const now = Date.now();
+    const expiryTime = draft.timestamp + ttlSeconds * 1000;
+
+    if (now > expiryTime) {
+      clearDraft(sessionId);
+      return null;
+    }
+
+    return draft.content;
+  } catch (e) {
+    console.error('Failed to parse draft', e);
+    return null;
+  }
+};
+
+/**
+ * Clears a specific message draft.
+ */
+export const clearDraft = (sessionId: string): void => {
+  if (typeof window === 'undefined' || !sessionId) return;
+  try {
+    sessionStorage.removeItem(`${DRAFT_PREFIX}${sessionId}`);
+  } catch (e) {
+    console.error('Failed to clear draft from sessionStorage', e);
+  }
+};
+
+/**
+ * Clears all drafts that have expired.
+ */
+export const clearExpiredDrafts = (ttlSeconds: number = DEFAULT_TTL): void => {
+  if (typeof window === 'undefined') return;
+
+  const now = Date.now();
+  const keysToRemove: string[] = [];
+
+  // Use index-based iteration so it works correctly in jsdom where
+  // Object.keys(localStorage) may not enumerate spied-on keys.
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(DRAFT_PREFIX)) {
+      try {
+        const item = sessionStorage.getItem(key);
+        if (item) {
+          const draft: Draft = JSON.parse(item);
+          const expiryTime = draft.timestamp + ttlSeconds * 1000;
+          if (now > expiryTime) {
+            keysToRemove.push(key);
+          }
+        }
+      } catch {
+        keysToRemove.push(key!);
+      }
+    }
+  }
+
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
+};

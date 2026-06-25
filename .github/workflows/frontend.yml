@@ -2,14 +2,14 @@ name: Frontend CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, add_Soroban_invariant_test]
     paths:
-      - "dex_with_fiat_frontend/**"
+      - "Dechat/dex_with_fiat_frontend/**"
       - ".github/workflows/frontend.yml"
   push:
-    branches: [main]
+    branches: [main, add_Soroban_invariant_test]
     paths:
-      - "dex_with_fiat_frontend/**"
+      - "Dechat/dex_with_fiat_frontend/**"
 
 permissions:
   contents: read
@@ -21,36 +21,35 @@ jobs:
 
     defaults:
       run:
-        working-directory: dex_with_fiat_frontend
+        working-directory: Dechat/dex_with_fiat_frontend
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dex_with_fiat_frontend/package-lock.json
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: Dechat/dex_with_fiat_frontend/pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: dex_with_fiat_frontend
-        run: npm ci
+        run: pnpm install
 
-      - name: Type Check
-        run: npm run typecheck
+      - name: Type check
+        run: pnpm tsc --noEmit
 
-      - name: Cache Next.js build artifacts
-        uses: actions/cache@v4
-        with:
-          path: dex_with_fiat_frontend/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('dex_with_fiat_frontend/package-lock.json') }}-${{ hashFiles('dex_with_fiat_frontend/src/**/*.{ts,tsx,js,jsx}') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('dex_with_fiat_frontend/package-lock.json') }}-
+      - name: Lint
+        run: pnpm lint
 
       - name: Build
-        run: npm run build
+        run: pnpm build
         env:
           NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
           NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
@@ -60,6 +59,28 @@ jobs:
           PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
           PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
 
-      - name: Unit tests with coverage
-        run: npm run test:coverage
+      - name: Unit tests with coverage (shard 1/4)
+        run: pnpm test:coverage:shard:1
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Unit tests with coverage (shard 2/4)
+        run: pnpm test:coverage:shard:2
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Unit tests with coverage (shard 3/4)
+        run: pnpm test:coverage:shard:3
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Unit tests with coverage (shard 4/4)
+        run: pnpm test:coverage:shard:4
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Merge coverage reports
+        run: pnpm test:coverage:merge
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         # Fails the pipeline if coverage thresholds (stmt 70%, branch 65%, fn 70%) are not met

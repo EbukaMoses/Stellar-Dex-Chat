@@ -1,0 +1,56 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "send": "Envoyer",
+    "copy": "Copier",
+    "copied": "Copié !",
+    "offline": "Hors ligne détecté. Actions en file d'attente.",
+    "online": "De retour en ligne. Reprise des actions...",
+    "offline_detected": "Hors ligne détecté. Les opérations en lecture seule sont mises en file d'attente et seront réessayées en ligne.",
+    "queued": "en file d'attente",
+    "retry_now": "Réessayer maintenant",
+    "network": "Réseau",
+    "unknown": "Inconnu",
+    "expected": "attendu",
+    "withdraw_xlm": "Retirer XLM",
+    "deposit_xlm": "Déposer XLM",
+    "network_mismatch_warning": "Les dépôts et retraits sont désactivés. Passez à {expectedNetwork} dans Freighter : Paramètres → Réseau → {expectedNetwork}.",
+    "loading_stats": "Chargement des statistiques…",
+    "bridge_balance": "Solde Bridge",
+    "deposit_limit": "Limite de dépôt",
+    "deposit_desc": "Ajouter des fonds à votre compte Stellar",
+    "rates_desc": "Vérifier les taux de conversion actuels",
+    "portfolio_desc": "Voir votre solde et la valeur de vos actifs",
+    "help_desc": "Obtenir de l'aide sur les fonctionnalités de la plateforme"
+  },
+  "chat": {
+    "placeholder": "Demandez les taux XLM, un dépôt, ou tout ce qui concerne Stellar...",
+    "new_chat": "Nouvelle discussion",
+    "commands": "Commandes",
+    "suggestions": {
+      "rates": "Vérifier les taux de conversion",
+      "portfolio": "Voir l'historique des transactions",
+      "convert": "Convertir 100 USDC en USD"
+    },
+    "error_message": "Échec de l'envoi du message. Vérifiez votre connexion.",
+    "cancelled_message": "Demande annulée par l'utilisateur."
+  },
+  "header": {
+    "title": "DexFiat · Stellar",
+    "subtitle": "XLM-to-Fiat propulsé par l'IA",
+    "connect": "Connecter Freighter",
+    "disconnect": "Déconnecter",
+    "settings": "Paramètres",
+    "receipts": "Reçus"
+  },
+  "receipt": {
+    "title": "Reçus de transaction",
+    "no_receipts": "Aucune transaction récente trouvée.",
+    "hash": "Hash Tx",
+    "amount": "Montant",
+    "status": "Statut",
+    "date": "Date"
+  }
+}
