@@ -257,6 +257,7 @@ export default function ReceiptDrawer({
         aria-busy={isLoading}
         role="dialog"
         aria-modal="true"
+        aria-hidden={!isOpen}
         aria-label="Transaction receipts — press Escape to close"
       >
         <div className="flex flex-col h-full">
