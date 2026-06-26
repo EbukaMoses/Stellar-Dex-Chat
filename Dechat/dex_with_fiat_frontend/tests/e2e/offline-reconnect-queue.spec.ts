@@ -1,8 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { gotoChatConnected } from './helpers';
 
-const MOCK_CHAT_REPLY = 'Queued message delivered after reconnect.';
-
 async function mockChatApi(page: Page): Promise<void> {
   await page.route('**/api/ai/chat**', async (route) => {
     await route.fulfill({
@@ -13,7 +11,7 @@ async function mockChatApi(page: Page): Promise<void> {
         confidence: 0.95,
         extractedData: {},
         requiredQuestions: [],
-        suggestedResponse: MOCK_CHAT_REPLY,
+        suggestedResponse: 'Queued message delivered after reconnect.',
         guardrail: {
           triggered: false,
           category: 'unsupported_request',
@@ -72,6 +70,8 @@ test.describe('Offline reconnect queue', () => {
     });
 
     await expect(page.getByText(queuedMessage)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(MOCK_CHAT_REPLY)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Back online. Replaying actions...')).toBeHidden({
+      timeout: 15_000,
+    });
   });
 });

@@ -214,7 +214,9 @@ test.describe('BankDetailsModal — Step 4: success state', () => {
     await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
     await confirmBtn.click();
 
-    await expect(page.getByText(/transfer/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Transfer initiated').first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -242,10 +244,11 @@ test.describe('BankDetailsModal — idempotency guard', () => {
 
     const confirmBtn = page.getByRole('button', { name: /confirm payout/i });
     await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
-    await confirmBtn.click();
-    await confirmBtn.click();
+    await confirmBtn.dblclick();
 
-    await page.waitForTimeout(4000);
+    await expect(page.getByText('Transfer initiated').first()).toBeVisible({
+      timeout: 10_000,
+    });
     expect(callCount).toBeLessThanOrEqual(1);
   });
 });
