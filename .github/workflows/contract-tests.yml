@@ -4,7 +4,9 @@ on:
   pull_request:
     branches:
       - main
-      - add_Soroban_invariant_test
+    paths:
+      - "Dechat/stellar-contracts/**"
+      - ".github/workflows/contract-tests.yml"
 
 jobs:
   test:
