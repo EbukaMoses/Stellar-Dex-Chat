@@ -50,11 +50,12 @@ pub const FIXED_POINT: i128 = 10_000_000;
 /// ```
 pub fn checked_mul_div_floor(a: i128, b: i128, d: i128) -> Result<i128, Error> {
     let product = a.checked_mul(b).ok_or(Error::Overflow)?;
-    Ok(if product >= 0 || product % d == 0 {
+    let quotient = if product >= 0 || product % d == 0 {
         product / d
     } else {
         product / d - 1
-    })
+    };
+    Ok(quotient)
 }
 
 pub fn mul_div_floor(a: i128, b: i128, d: i128) -> i128 {
@@ -94,13 +95,14 @@ pub fn mul_div_floor(a: i128, b: i128, d: i128) -> i128 {
 /// ```
 pub fn checked_mul_div_ceil(a: i128, b: i128, d: i128) -> Result<i128, Error> {
     let product = a.checked_mul(b).ok_or(Error::Overflow)?;
-    Ok(if product >= 0 {
+    let quotient = if product >= 0 {
         product.checked_add(d - 1).ok_or(Error::Overflow)? / d
     } else if product % d == 0 {
         product / d
     } else {
         product / d - 1
-    })
+    };
+    Ok(quotient)
 }
 
 pub fn mul_div_ceil(a: i128, b: i128, d: i128) -> i128 {
