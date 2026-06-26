@@ -1047,6 +1047,93 @@ fn test_slippage_boundary_exceeded() {
     }
 }
 
+// ── fallback oracle tests (issue #965) ──────────────────────────────────────
+
+#[contract]
+pub struct StaleOracle;
+
+#[contractimpl]
+impl StaleOracle {
+    pub fn get_price(_env: Env, _token: Address) -> Option<i128> {
+        // Simulate a stale oracle that returns no price.
+        None
+    }
+}
+
+#[contract]
+pub struct FallbackPriceOracle;
+
+#[contractimpl]
+impl FallbackPriceOracle {
+    pub fn get_price(_env: Env, _token: Address) -> Option<i128> {
+        // Return 1.05 USD (10,500,000) as fallback price.
+        Some(10_500_000)
+    }
+}
+
+#[test]
+fn test_fallback_oracle_used_when_primary_stale() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, _admin, token_addr, _token, token_sac) = setup_bridge(&env, 100_000);
+
+    // Set primary oracle to a stale oracle that returns None.
+    let stale_id = env.register(StaleOracle, ());
+    bridge.set_oracle(&stale_id);
+
+    // Set fallback oracle to one that returns a valid price.
+    let fallback_id = env.register(FallbackPriceOracle, ());
+    bridge.set_fallback_oracle(&fallback_id);
+
+    let user = Address::generate(&env);
+    token_sac.mint(&user, &100_000);
+
+    // Deposit with expected_price matching the fallback oracle (1.05 USD = 10_500_000).
+    // Max slippage of 600 bps allows the fallback price through.
+    bridge.deposit(
+        &user,
+        &1000,
+        &token_addr,
+        &Bytes::new(&env),
+        &10_500_000,
+        &600,
+        &None,
+    );
+    assert_eq!(token.balance(&user), 99_000);
+}
+
+#[test]
+fn test_fallback_oracle_still_fails_when_both_stale() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, _admin, token_addr, _token, token_sac) = setup_bridge(&env, 100_000);
+
+    // Set primary oracle to a stale oracle.
+    let stale_id = env.register(StaleOracle, ());
+    bridge.set_oracle(&stale_id);
+
+    // Set fallback oracle to another stale oracle.
+    let stale_fallback_id = env.register(StaleOracle, ());
+    bridge.set_fallback_oracle(&stale_fallback_id);
+
+    let user = Address::generate(&env);
+    token_sac.mint(&user, &100_000);
+
+    // Deposit should fail because both oracles return stale prices.
+    let result = bridge.try_deposit(
+        &user,
+        &1000,
+        &token_addr,
+        &Bytes::new(&env),
+        &10_000_000,
+        &600,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(Error::OraclePriceInvalid)));
+}
+
 // ── event versioning tests ────────────────────────────────────────────────
 #[test]
 fn test_event_version_constant() {

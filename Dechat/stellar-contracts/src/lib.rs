@@ -486,6 +486,7 @@ pub struct ConfigSnapshot {
     pub pending_admin_proposed_at: Option<u32>,
     pub token: Address,
     pub oracle: Option<Address>,
+    pub fallback_oracle: Option<Address>,
     pub fiat_limit: Option<i128>,
     pub lock_period: u32,
     pub cooldown_ledgers: u32,
@@ -1067,6 +1068,8 @@ pub enum DataKey {
     AdminTransferProposedAt,
     // ── Issue #fee_vault_threshold: per-token fee vault threshold ────────
     FeeVaultThreshold(Address),
+    // ── Issue #965: fallback oracle for price feed staleness ────────────
+    FallbackOracle,
 
     // ── Issue #1003: contract version migration guard ─────────────────────
     /// Monotonically-increasing integer version stored after each upgrade.
@@ -3234,6 +3237,25 @@ impl FiatBridge {
         Ok(())
     }
 
+    /// Sets a fallback price oracle used when the primary oracle returns a stale or invalid price (admin only).
+    ///
+    /// # Parameters
+    /// - `oracle` – Address of the fallback oracle contract implementing the price feed.
+    ///
+    /// # Errors
+    /// - [`Error::NotInitialized`] if the contract has not been initialised.
+    /// - [`Error::Unauthorized`]   if the caller is not the admin.
+    pub fn set_fallback_oracle(env: Env, oracle: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::FallbackOracle, &oracle);
+        Ok(())
+    }
+
     /// Sets the maximum fiat-equivalent deposit limit in USD cents (admin only).
     ///
     /// Used to cap the USD value of deposits when oracle pricing is enabled.
@@ -3376,10 +3398,26 @@ impl FiatBridge {
         let price = if let Some(addr) = oracle_addr {
             let oracle = crate::oracle::OracleClient::new(env, &addr);
             let p = oracle.get_price(token).unwrap_or(0);
-            if p <= 0 {
-                return Err(Error::OraclePriceInvalid);
+            if p > 0 {
+                p
+            } else {
+                // Primary oracle returned stale/invalid price — try fallback.
+                let fallback_addr: Option<Address> = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::FallbackOracle);
+                if let Some(fb) = fallback_addr {
+                    let fallback_oracle = crate::oracle::OracleClient::new(env, &fb);
+                    let fb_price = fallback_oracle.get_price(token).unwrap_or(0);
+                    if fb_price > 0 {
+                        fb_price
+                    } else {
+                        return Err(Error::OraclePriceInvalid);
+                    }
+                } else {
+                    return Err(Error::OraclePriceInvalid);
+                }
             }
-            p
         } else {
             return Err(Error::OracleNotSet);
         };
@@ -5265,6 +5303,7 @@ impl FiatBridge {
             pending_admin_proposed_at: env.storage().instance().get(&DataKey::AdminTransferProposedAt),
             token,
             oracle: env.storage().instance().get(&DataKey::Oracle),
+            fallback_oracle: env.storage().instance().get(&DataKey::FallbackOracle),
             fiat_limit: env.storage().instance().get(&DataKey::FiatLimit),
             lock_period: env
                 .storage()
