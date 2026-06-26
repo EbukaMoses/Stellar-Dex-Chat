@@ -1,0 +1,481 @@
+@import 'tailwindcss';
+
+:root {
+  --background: #f4f7fb;
+  --foreground: #111827;
+  --color-surface: #ffffff;
+  --color-surface-muted: #eef2f7;
+  --color-surface-elevated: #e2e8f0;
+  --color-text-primary: #111827;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-border: #d6deea;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-soft: rgba(37, 99, 235, 0.12);
+  --color-success: #16a34a;
+  --color-success-soft: rgba(22, 163, 74, 0.14);
+  --color-warning: #d97706;
+  --color-warning-soft: rgba(217, 119, 6, 0.14);
+  --color-danger: #dc2626;
+  --color-danger-soft: rgba(220, 38, 38, 0.14);
+  --color-overlay: rgba(15, 23, 42, 0.62);
+  --color-scrollbar-track: #e2e8f0;
+  --color-scrollbar-thumb: #94a3b8;
+  /* Chart-specific semantic tokens (#452) */
+  --color-chart-primary: var(--color-primary);
+  --color-chart-grid: var(--color-border);
+  --color-chart-text: var(--color-text-muted);
+  --color-chart-background: var(--color-surface);
+}
+
+[data-theme='dark'] {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --color-surface: #0f172a;
+  --color-surface-muted: #111c31;
+  --color-surface-elevated: #1e293b;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-border: #243244;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-primary-soft: rgba(96, 165, 250, 0.16);
+  --color-success: #4ade80;
+  --color-success-soft: rgba(74, 222, 128, 0.16);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(251, 191, 36, 0.18);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.18);
+  --color-overlay: rgba(2, 6, 23, 0.76);
+  --color-scrollbar-track: #111827;
+  --color-scrollbar-thumb: #475569;
+  /* Chart-specific semantic tokens (#452) */
+  --color-chart-primary: var(--color-primary);
+  --color-chart-grid: var(--color-border);
+  --color-chart-text: var(--color-text-muted);
+  --color-chart-background: var(--color-surface);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+  color-scheme: light;
+}
+
+[data-theme='dark'] body {
+  color-scheme: dark;
+}
+
+html {
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slideInLeft {
+  animation: slideInFromLeft 0.5s ease-out;
+}
+
+.animate-slideInRight {
+  animation: slideInFromRight 0.5s ease-out;
+}
+
+.animate-pulse-custom {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bounceOnce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(1.5);
+  }
+
+  70% {
+    transform: scale(0.9);
+  }
+}
+
+.animate-bounce-once {
+  animation: bounceOnce 0.6s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.25s ease-out;
+}
+
+/* Custom scrollbar for light theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+  border-radius: 4px;
+}
+
+/* Dark theme scrollbar */
+[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Better scrolling for chat */
+.chat-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+  scroll-behavior: smooth;
+  overflow-anchor: none;
+}
+
+/* Chat-specific scrollbar styling */
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-scrollbar-thumb) 80%, transparent);
+  border-radius: 3px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb);
+}
+
+/* Focus styles for accessibility */
+button:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Animation for loading states */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom slider styles */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 12px rgba(59, 130, 246, 0.4);
+}
+
+.slider::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
+}
+
+.slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 12px rgba(59, 130, 246, 0.4);
+}
+
+/* Glassmorphism effects */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient animations */
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.gradient-animate {
+  background-size: 400% 400%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+/* Custom button hover effects */
+.btn-modern {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-modern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.btn-modern:hover::before {
+  left: 100%;
+}
+
+.theme-app {
+  background: var(--background);
+  color: var(--color-text-primary);
+}
+
+.theme-surface {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.theme-surface-muted {
+  background: var(--color-surface-muted);
+}
+
+.theme-border {
+  border-color: var(--color-border);
+}
+
+.theme-text-primary {
+  color: var(--color-text-primary);
+}
+
+.theme-text-secondary {
+  color: var(--color-text-secondary);
+}
+
+.theme-text-muted {
+  color: var(--color-text-muted);
+}
+
+.theme-input {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.theme-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/*
+ * Explicit theme-token border colours for inputs (#632).
+ *
+ * Applying the border colour through a dedicated class (specificity 0,1,0)
+ * reliably beats the Tailwind preflight `*` border-color reset (specificity
+ * 0,0,0), so the intended themed border is rendered deterministically instead
+ * of an incorrect fallback colour. `-invalid` surfaces an error/warning state.
+ */
+.theme-input-border {
+  border-color: var(--color-border);
+}
+
+.theme-input-border-invalid {
+  border-color: var(--color-warning);
+}
+
+.theme-primary-button {
+  background: var(--color-primary);
+  color: #fff;
+  transition:
+    background-color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.theme-primary-button:hover {
+  background: var(--color-primary-hover);
+}
+
+.theme-secondary-button {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.theme-overlay {
+  background: var(--color-overlay);
+}
+
+.theme-soft-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+.theme-soft-warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+
+.theme-soft-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+}
+
+/* Enhanced shadows */
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.shadow-glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.shadow-glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+/* Subtle animations */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Improved focus states */
+.focus-modern:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(59, 130, 246, 0.5),
+    0 0 0 4px rgba(59, 130, 246, 0.1);
+}

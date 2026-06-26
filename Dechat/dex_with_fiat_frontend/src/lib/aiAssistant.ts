@@ -1,0 +1,977 @@
+import {
+  AIAnalysisResult,
+  ChatMessage,
+  GuardrailCategory,
+  GuardrailResult,
+  TransactionData,
+} from '@/types';
+import { telemetry } from '@/lib/telemetry';
+import { toastStore } from '@/lib/toastStore';
+
+function isLikelyNetworkError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return false;
+  }
+  if (error instanceof TypeError) {
+    return true;
+  }
+  if (error instanceof DOMException && error.name === 'NetworkError') {
+    return true;
+  }
+  if (error instanceof Error) {
+    const m = error.message.toLowerCase();
+    return (
+      m.includes('failed to fetch') ||
+      m.includes('network') ||
+      m.includes('load failed')
+    );
+  }
+  return false;
+}
+
+function notifyAiNetworkUnavailable(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  toastStore.addToast(
+    "Can't reach the AI service. Check your network connection and try again.",
+    'warning',
+  );
+}
+
+/**
+ * Represents a single animation state (initial or animate) with optional
+ * transition configuration compatible with framer-motion's `Variant` type.
+ */
+export type AnimationVariantState = {
+  opacity?: number;
+  y?: number;
+  x?: number;
+  scale?: number;
+  rotate?: number;
+  transition?: {
+    duration: number;
+    ease?: readonly number[] | string;
+    delay?: number;
+    type?: string;
+    stiffness?: number;
+    damping?: number;
+  };
+};
+
+/**
+ * A pair of initial/animate states that framer-motion `motion.div` consumes
+ * via its `variants` prop.
+ */
+export type AnimationVariants = {
+  initial: AnimationVariantState;
+  animate: AnimationVariantState;
+};
+
+/**
+ * Mapping from AI intent (plus a `default` fallback) to animation variants,
+ * allowing each response type to have a distinct entrance animation.
+ */
+export const ASSISTANT_ANIMATION_VARIANTS: Record<
+  AIAnalysisResult['intent'] | 'default',
+  AnimationVariants
+> = {
+  /** Standard slide-up fade for general queries. */
+  query: {
+    initial: { opacity: 0, y: 16, scale: 1 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.35, ease: [0.23, 1, 0.32, 1] },
+    },
+  },
+
+  /** Attention-grabbing horizontal shake for guardrail responses. */
+  guardrail: {
+    initial: { opacity: 0, x: -12, scale: 0.97 },
+    animate: {
+      opacity: 1,
+      x: 0,
+      scale: 1,
+      transition: { duration: 0.4, type: 'spring', stiffness: 300, damping: 20 },
+    },
+  },
+
+  /** Scale-up pop for successful fiat conversion confirmations. */
+  fiat_conversion: {
+    initial: { opacity: 0, y: 24, scale: 0.92 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+    },
+  },
+
+  /** Gentle fade for portfolio check results. */
+  portfolio: {
+    initial: { opacity: 0, y: 10, scale: 1 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] },
+    },
+  },
+
+  /** Slide-in for technical support replies. */
+  technical_support: {
+    initial: { opacity: 0, y: 20, scale: 0.98 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.38, ease: [0.23, 1, 0.32, 1] },
+    },
+  },
+
+  /** Subtle fade for unknown intent fallbacks. */
+  unknown: {
+    initial: { opacity: 0, y: 12, scale: 1 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] },
+    },
+  },
+
+  /** Baseline default used when no specific intent matches. */
+  default: {
+    initial: { opacity: 0, y: 20, scale: 0.95 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.4, ease: [0.23, 1, 0.32, 1] },
+    },
+  },
+};
+
+/**
+ * Reduced-motion safe variants that strip positional transforms,
+ * keeping only a simple opacity fade.
+ */
+export const REDUCED_MOTION_VARIANTS: AnimationVariants = {
+  initial: { opacity: 0 },
+  animate: {
+    opacity: 1,
+    transition: { duration: 0.2 },
+  },
+};
+
+type GuardrailMatch = {
+  category: GuardrailCategory;
+  reason: string;
+};
+
+/**
+ * Result returned by the pagination helper.
+ */
+export interface PaginationResult<T> {
+  items: T[];
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+/**
+ * A helper utility class managing AI message analysis and guardrail protection
+ * for the Stellar FiatBridge frontend assistant.
+ *
+ * This class includes built-in error boundaries to gracefully handle failures
+ * in AI analysis, network issues, and guardrail evaluation without breaking
+ * the user interface or conversation flow.
+ */
+export class AIAssistant {
+  private abortController: AbortController | null = null;
+  private static guardrailCounts: Record<GuardrailCategory, number> = {
+    unsupported_request: 0,
+    wallet_security: 0,
+    compliance_evasion: 0,
+    malicious_activity: 0,
+    financial_guarantee: 0,
+  };
+
+  static readonly LOW_CONFIDENCE_THRESHOLD = 0.7;
+  static readonly DEFAULT_PAGE_SIZE = 20;
+  /** Maximum number of recent messages included in each API request. */
+  static readonly CONVERSATION_WINDOW_SIZE = 20;
+
+  /**
+   * Safe fallback response returned when AI analysis fails critically.
+   * Used when network errors, parse errors, or unexpected exceptions occur.
+   */
+  private static readonly SAFE_FALLBACK_RESULT: AIAnalysisResult = {
+    intent: 'unknown',
+    confidence: 0,
+    extractedData: {},
+    requiredQuestions: [],
+    suggestedResponse:
+      "I'm having trouble understanding your request. Could you please rephrase it?",
+    guardrail: undefined,
+  };
+
+  /**
+   * Paginate an array of chat messages.
+   *
+   * @param messages - Full array of messages to paginate.
+   * @param page - 1-indexed page number (defaults to 1).
+   * @param pageSize - Number of items per page (defaults to DEFAULT_PAGE_SIZE).
+   * @returns PaginationResult containing the sliced items and metadata.
+   */
+  static paginateMessages(
+    messages: ChatMessage[],
+    page: number = 1,
+    pageSize: number = AIAssistant.DEFAULT_PAGE_SIZE,
+  ): PaginationResult<ChatMessage> {
+    const safePage = Math.max(1, Math.floor(page));
+    const safePageSize = Math.max(1, Math.floor(pageSize));
+    const totalItems = messages.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+    const clampedPage = Math.min(safePage, totalPages);
+    const startIndex = (clampedPage - 1) * safePageSize;
+    const endIndex = Math.min(startIndex + safePageSize, totalItems);
+
+    return {
+      items: messages.slice(startIndex, endIndex),
+      currentPage: clampedPage,
+      totalPages,
+      totalItems,
+      hasNextPage: clampedPage < totalPages,
+      hasPreviousPage: clampedPage > 1,
+    };
+  }
+
+  /**
+   * Resolve the appropriate framer-motion animation variants for a given
+   * AI analysis result.  Returns reduced-motion-safe variants when the
+   * user prefers reduced motion.
+   *
+   * @param analysis - The AI analysis result whose intent drives variant selection.
+   * @param prefersReducedMotion - Whether the user has requested reduced motion.
+   * @returns AnimationVariants object ready to spread into a motion component.
+   */
+  static getAnimationVariants(
+    analysis: AIAnalysisResult,
+    prefersReducedMotion = false,
+  ): AnimationVariants {
+    if (prefersReducedMotion) {
+      return REDUCED_MOTION_VARIANTS;
+    }
+
+    return (
+      ASSISTANT_ANIMATION_VARIANTS[analysis.intent] ??
+      ASSISTANT_ANIMATION_VARIANTS.default
+    );
+  }
+
+  /**
+   * Trim a conversation history array to the most recent N messages.
+   *
+   * Sending the full history on every request causes unbounded token growth.
+   * This helper keeps only the tail of the array so the payload stays within
+   * the model's context window regardless of conversation length (#991).
+   *
+   * @param history - Full array of past messages in chronological order.
+   * @param windowSize - Maximum number of messages to include (default: CONVERSATION_WINDOW_SIZE).
+   * @returns A new array containing only the last `windowSize` messages.
+   */
+  static trimConversationHistory(
+    history: ChatMessage[],
+    windowSize: number = AIAssistant.CONVERSATION_WINDOW_SIZE,
+  ): ChatMessage[] {
+    if (!Array.isArray(history) || history.length === 0) return [];
+    return history.slice(-Math.max(1, Math.floor(windowSize)));
+  }
+
+  /**
+   * Analyze the user message and produce a structured AI analysis result.
+   * Includes guardrail checks, FAQ matching, deterministic parsing, AI model
+   * generation, and merged extracted data.
+   *
+   * **Error Boundary**: This method includes comprehensive error handling to ensure
+   * that failures in AI analysis, network issues, or unexpected exceptions do not
+   * crash the user interface. On any critical error, a safe fallback response is
+   * returned, allowing the conversation to continue gracefully.
+   *
+   * @param message - Incoming user query or request text.
+   * @param context - Optional context values to include in the AI prompt.
+   *   When `context.history` is a ChatMessage array it is automatically trimmed
+   *   to the last {@link AIAssistant.CONVERSATION_WINDOW_SIZE} messages before
+   *   being sent, preventing unbounded token growth over long conversations (#991).
+   * @param signal - Optional AbortSignal for cancellation (does not trigger fallback).
+   * @returns AIAnalysisResult with determined intent and suggested response. On errors,
+   *          returns a safe fallback result that allows conversation to continue.
+   */
+  async analyzeUserMessage(
+    message: string,
+    context?: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<AIAnalysisResult> {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+    const controllerSignal = signal || this.abortController.signal;
+    try {
+      // Validate input to prevent processing empty or malformed messages
+      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        console.warn('AIAssistant: Received empty or invalid message');
+        return AIAssistant.SAFE_FALLBACK_RESULT;
+      }
+
+      // Trim conversation history to a sliding window before sending (#991).
+      // Full history grows without bound and will eventually exceed the model's
+      // context window; we keep only the most recent messages plus the new one.
+      let trimmedContext = context;
+      if (context && Array.isArray(context.history)) {
+        trimmedContext = {
+          ...context,
+          history: AIAssistant.trimConversationHistory(
+            context.history as ChatMessage[],
+          ),
+        };
+      }
+
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, context: trimmedContext }),
+        signal: controllerSignal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI chat API returned ${response.status}`);
+      }
+
+      const result: AIAnalysisResult = await response.json() as AIAnalysisResult;
+
+      // Validate result structure before processing
+      if (!this.isValidAnalysisResult(result)) {
+        console.warn('AIAssistant: API returned invalid result structure', result);
+        return AIAssistant.SAFE_FALLBACK_RESULT;
+      }
+
+      // Record any guardrail triggers for telemetry
+      if (result.guardrail?.triggered) {
+        this.recordGuardrailTrigger(
+          {
+            category: result.guardrail.category,
+            reason: result.guardrail.reason,
+          },
+          message,
+        );
+      }
+
+      return result;
+    } catch (error) {
+      // Re-throw abort errors cleanly without logging -- callers handle cancellation
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
+      if (isLikelyNetworkError(error)) {
+        notifyAiNetworkUnavailable();
+      }
+      console.error('AI Analysis Error:', error);
+      return AIAssistant.SAFE_FALLBACK_RESULT;
+    }
+  }
+
+  /**
+   * Build the prompt text that is sent to the AI model for analysis.
+   *
+   * @param message - Raw user message for analysis.
+   * @param context - Optional additional context values.
+   * @returns A fully composed prompt string for the AI model.
+   */
+  private buildAnalysisPrompt(
+    message: string,
+    context?: Record<string, unknown>,
+  ): string {
+    return `
+You are a professional AI agent specializing in cryptocurrency-to-fiat conversions on the Stellar network. You help users deposit XLM into the Stellar FiatBridge smart contract and convert crypto to fiat via secure bank transfers.
+
+PERSONALITY & TONE:
+- Professional yet friendly and approachable
+- Clear, concise communication
+- Proactive in guiding users through the process
+- Confident and knowledgeable about Stellar/Soroban and traditional finance
+
+User Message: "${message}"
+Context: ${context ? JSON.stringify(context) : 'None'}
+
+CORE CAPABILITIES:
+1. XLM to fiat conversions (XLM → NGN, USD, EUR) - Primary Focus
+2. Stellar FiatBridge smart contract interactions (deposit, withdraw, check limits)
+3. Real-time XLM market rate analysis
+4. Transaction tracking on Stellar Expert (testnet)
+5. Account setup and Freighter wallet guidance
+6. XLM portfolio balance management
+
+CONVERSATION FLOW INTELLIGENCE:
+- Greetings: Welcome users warmly, focus on XLM conversions via Stellar
+- Conversion requests: Extract XLM details, provide rate quotes, guide through process
+- Questions: Answer knowledgeably about XLM, Stellar, Soroban, Freighter, DeFi
+- Technical issues: Provide clear troubleshooting guidance for Freighter / Soroban
+- Missing info: Ask targeted follow-up questions naturally
+
+EXTRACTION GUIDELINES:
+- Set intent to "fiat_conversion" only when user explicitly wants to deposit XLM or convert XLM to fiat
+- Set intent to "query" for questions, information requests, or casual conversation
+- Set intent to "portfolio" for XLM balance checks, asset inquiries about Stellar assets
+- Set intent to "guardrail" for unsupported requests or risky requests involving private keys, bypassing compliance, exploits, scams, or guaranteed returns
+- Set intent to "unknown" only if completely unclear
+- Always assume XLM when referring to tokens (we support XLM on Stellar)
+- If the user seems to want a conversion but amount, payout target, or currency is missing or ambiguous, keep intent as "fiat_conversion", set confidence below 0.7, and include one targeted follow-up question in "requiredQuestions"
+- When confidence is below 0.7, keep "suggestedResponse" focused on that single clarification instead of saying the transaction is ready
+
+Respond with a JSON object in this exact format:
+{
+    "intent": "fiat_conversion|query|portfolio|technical_support|guardrail|unknown",
+  "confidence": 0.8,
+  "extractedData": {
+    "type": "fiat_conversion",
+    "tokenIn": "XLM",
+    "amountIn": "1000",
+    "fiatAmount": "1000",
+    "fiatCurrency": "NGN"
+  },
+  "requiredQuestions": ["What amount of XLM would you like to deposit/convert?"],
+  "suggestedResponse": "I'd be happy to help you convert your XLM to Nigerian Naira via the Stellar FiatBridge!",
+  "guardrail": {
+    "triggered": false,
+    "category": "unsupported_request",
+    "reason": ""
+  }
+}
+
+EXAMPLE RESPONSES BY INTENT:
+
+GREETING/WELCOME:
+{
+  "intent": "query",
+  "confidence": 0.95,
+  "extractedData": {},
+  "requiredQuestions": [],
+  "suggestedResponse": "Hello! I'm your personal USDT-to-fiat conversion specialist. I can help you seamlessly convert your USDT stablecoin to local currency (NGN, USD, EUR) through secure bank transfers. Whether you want to cash out a small amount or large holdings, I'll guide you through the entire process. What can I help you with today?"
+}
+
+GENERAL QUERY:
+{
+  "intent": "query", 
+  "confidence": 0.85,
+  "extractedData": {},
+  "requiredQuestions": [],
+  "suggestedResponse": "Great question! I'm here to help with that. [Provide helpful answer and naturally guide toward USDT conversion services]"
+}
+
+PORTFOLIO CHECK:
+{
+  "intent": "portfolio",
+  "confidence": 0.9,
+  "extractedData": {},
+  "requiredQuestions": [],
+  "suggestedResponse": "I can help you check your USDT balance and evaluate conversion opportunities. Let me connect to your wallet to provide real-time USDT balance information."
+}
+
+FIAT_CONVERSION EXAMPLE:
+{
+  "intent": "fiat_conversion",
+  "confidence": 0.9,
+  "extractedData": {
+    "type": "fiat_conversion",
+    "tokenIn": "XLM",
+    "amountIn": "500",
+    "fiatCurrency": "NGN"
+  },
+  "requiredQuestions": [],
+  "suggestedResponse": "Perfect! I can help you deposit 500 XLM into the Stellar FiatBridge for conversion to Nigerian Naira. Let me prepare the deposit transaction for you to review and sign with Freighter."
+}
+
+Be conversational and helpful. Ask clarifying questions when information is missing. Always focus on XLM conversions on Stellar.
+`;
+  }
+
+  /**
+   * Classify a message against guardrail categories to prevent unsafe AI responses.
+   *
+   * @param message - The user-provided message to evaluate.
+   * @returns GuardrailMatch when a guardrail-category trigger is matched, otherwise null.
+   */
+  private classifyGuardrail(message: string): GuardrailMatch | null {
+    const normalized = message.toLowerCase();
+    const mentionsSupportedDomain =
+      /(xlm|stellar|soroban|freighter|wallet|fiat|deposit|withdraw|bank transfer|portfolio|contract|offramp|naira|ngn|usd|eur)/i.test(
+        message,
+      );
+
+    if (
+      /(seed phrase|secret phrase|private key|recovery phrase|mnemonic|passphrase|wallet secret)/i.test(
+        normalized,
+      )
+    ) {
+      return {
+        category: 'wallet_security',
+        reason:
+          'Request involves sensitive wallet credentials or recovery data.',
+      };
+    }
+
+    if (
+      /(bypass kyc|avoid kyc|skip kyc|evade aml|avoid aml|bypass compliance|sanction|launder|money laundering|wash trading|hide funds)/i.test(
+        normalized,
+      )
+    ) {
+      return {
+        category: 'compliance_evasion',
+        reason:
+          'Request appears to seek compliance evasion or illicit fund flows.',
+      };
+    }
+
+    if (
+      /(hack|exploit|drain|phish|steal|scam|spoof|backdoor|malware|keylogger|credential stuffing|rug pull)/i.test(
+        normalized,
+      )
+    ) {
+      return {
+        category: 'malicious_activity',
+        reason:
+          'Request appears to facilitate fraud, exploits, or other malicious activity.',
+      };
+    }
+
+    if (
+      /(guarantee profit|guaranteed profit|risk-free return|sure profit|double my money|insider tip|pump this|financial advice)/i.test(
+        normalized,
+      )
+    ) {
+      return {
+        category: 'financial_guarantee',
+        reason:
+          'Request asks for unsafe financial guarantees or promotional investment advice.',
+      };
+    }
+
+    if (
+      !mentionsSupportedDomain &&
+      /(write|build|book|plan|recommend|recipe|summarize|translate|homework|essay|poem|code|movie|weather|hotel|flight|calendar|email)/i.test(
+        normalized,
+      )
+    ) {
+      return {
+        category: 'unsupported_request',
+        reason: 'Request falls outside the Stellar conversion assistant scope.',
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Build an AIAnalysisResult payload when a guardrail has been triggered.
+   *
+   * @param match - The guardrail match details.
+   * @param message - The original user message that triggered guardrails.
+   * @returns AIAnalysisResult object intended for safe guardrail reply flow.
+   */
+  private buildGuardrailResponse(
+    match: GuardrailMatch,
+    message: string,
+  ): AIAnalysisResult {
+    const guardrail = this.recordGuardrailTrigger(match, message);
+
+    return {
+      intent: 'guardrail',
+      confidence: 0.99,
+      extractedData: {},
+      requiredQuestions: [],
+      suggestedResponse: this.buildSafeGuardrailTemplate(match.category),
+      guardrail,
+    };
+  }
+
+  /**
+   * Record a guardrail trigger event and emit telemetry for auditing and stats.
+   *
+   * @param match - Guardrail match details including category and reason.
+   * @param message - Original user message contents.
+   * @returns GuardrailResult including trigger and total counts.
+   */
+  private recordGuardrailTrigger(
+    match: GuardrailMatch,
+    message: string,
+  ): GuardrailResult {
+    AIAssistant.guardrailCounts[match.category] += 1;
+
+    const totalTriggerCount = Object.values(AIAssistant.guardrailCounts).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+
+    const traceId = telemetry.generateTraceId();
+    const spanId = telemetry.generateSpanId();
+
+    telemetry.logWithTrace('warn', 'AI guardrail triggered', traceId, spanId, {
+      category: match.category,
+      reason: match.reason,
+      triggerCount: AIAssistant.guardrailCounts[match.category],
+      totalTriggerCount,
+      messagePreview: message.slice(0, 120),
+    });
+
+    return {
+      triggered: true,
+      category: match.category,
+      reason: match.reason,
+      triggerCount: AIAssistant.guardrailCounts[match.category],
+      totalTriggerCount,
+    };
+  }
+
+  /**
+   * Build the user-facing guardrail response template based on category.
+   *
+   * @param category - The guardrail category that triggered.
+   * @returns A formatted guardrail response string.
+   */
+  private buildSafeGuardrailTemplate(category: GuardrailCategory): string {
+    const categoryLine = {
+      unsupported_request:
+        'I can only help with Stellar wallet, XLM conversion, and fiat off-ramp tasks in this app.',
+      wallet_security:
+        'I can\u2019t process or help expose private keys, seed phrases, or recovery credentials.',
+      compliance_evasion:
+        'I can\u2019t help bypass KYC, AML, sanctions, or other compliance controls.',
+      malicious_activity:
+        'I can\u2019t assist with exploits, scams, phishing, or unauthorized access.',
+      financial_guarantee:
+        'I can\u2019t promise profits or provide unsafe guaranteed-return guidance.',
+    }[category];
+
+    return `**Request Blocked by Guardrails**
+
+${categoryLine}
+
+**What I can help with instead**
+- Deposit XLM into the Stellar FiatBridge flow
+- Check XLM market rates and conversion estimates
+- Explain how the Stellar offramp works
+- Help connect your Freighter wallet safely
+
+Choose one of the next actions below and I'll keep it moving.`;
+  }
+
+  /**
+   * Parse the AI model string response into AIAnalysisResult with normalized fields.
+   * Falls back to safe unknown result when parsing fails.
+   *
+   * @param response - Raw response text from AI generation service.
+   * @returns AIAnalysisResult parsed or fallback message.
+   */
+  private parseAIResponse(response: string): AIAnalysisResult {
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const extractedData = parsed.extractedData || {};
+        const requiredQuestions = Array.isArray(parsed.requiredQuestions)
+          ? parsed.requiredQuestions
+          : [];
+        const clarificationQuestion =
+          requiredQuestions[0] ||
+          this.buildClarificationQuestion(extractedData, parsed.intent);
+
+        return {
+          intent: parsed.intent || 'unknown',
+          confidence: parsed.confidence || 0.5,
+          extractedData,
+          requiredQuestions:
+            parsed.confidence < AIAssistant.LOW_CONFIDENCE_THRESHOLD &&
+            clarificationQuestion
+              ? [clarificationQuestion]
+              : requiredQuestions,
+          suggestedResponse:
+            parsed.suggestedResponse || 'How can I help you today?',
+          guardrail: parsed.guardrail,
+        };
+      }
+    } catch (error) {
+      console.error('Failed to parse AI response:', error);
+    }
+
+    return {
+      intent: 'unknown',
+      confidence: 0,
+      extractedData: {},
+      requiredQuestions: [],
+      suggestedResponse:
+        response ||
+        "How can I help you with your DeFi needs today? You can also say 'bridge tokens from Sepolia to Optimism' to use the CCIP bridge.",
+      guardrail: undefined,
+    };
+  }
+
+  /**
+   * Validates that an AIAnalysisResult object has the required fields.
+   *
+   * **Error Boundary Helper**: Used by analyzeUserMessage to verify API responses
+   * before processing. Prevents crashes from malformed or incomplete responses.
+   *
+   * @param result - The result object to validate.
+   * @returns true if result has all required fields with correct types, false otherwise.
+   */
+  private isValidAnalysisResult(result: unknown): result is AIAnalysisResult {
+    if (!result || typeof result !== 'object') return false;
+    const obj = result as Record<string, unknown>;
+    return (
+      typeof obj.intent === 'string' &&
+      typeof obj.confidence === 'number' &&
+      obj.confidence >= 0 &&
+      obj.confidence <= 1 &&
+      typeof obj.suggestedResponse === 'string' &&
+      Array.isArray(obj.extractedData) || typeof obj.extractedData === 'object' &&
+      Array.isArray(obj.requiredQuestions)
+    );
+  }
+
+  /**
+   * Generate a conversational follow-up question when required information is missing.
+   *
+   * **Error Boundary**: Returns a generic fallback question on network errors or
+   * API failures, allowing the conversation to continue without interruption.
+   *
+   * @param intent - The inferred intent from analysis.
+   * @param missingData - Array of missing data keys.
+   * @param signal - Optional AbortSignal for cancellation.
+   * @returns A single conversational question string. Defaults to generic fallback on errors.
+   */
+  async generateFollowUpQuestion(
+    intent: string,
+    missingData: string[],
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const fallbackQuestion = 'Could you provide more details about your request?';
+
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+    const controllerSignal = signal || this.abortController.signal;
+
+    try {
+      // Validate inputs to prevent malformed API calls
+      if (!intent || typeof intent !== 'string' || !Array.isArray(missingData)) {
+        console.warn('AIAssistant: Invalid inputs to generateFollowUpQuestion', { intent, missingData });
+        return fallbackQuestion;
+      }
+
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Generate a single, natural follow-up question for a Stellar DeFi assistant. Intent: ${intent}. Missing data: ${missingData.join(', ')}. Return only the question text.`,
+        }),
+        signal: controllerSignal,
+      });
+
+      if (!response.ok) {
+        console.warn(`AIAssistant: Follow-up question API returned ${response.status}`);
+        return fallbackQuestion;
+      }
+
+      const result = await response.json() as AIAnalysisResult;
+      const question = result.suggestedResponse || fallbackQuestion;
+
+      // Validate returned question is non-empty
+      if (typeof question === 'string' && question.trim().length > 0) {
+        return question;
+      }
+      return fallbackQuestion;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
+      if (isLikelyNetworkError(error)) {
+        notifyAiNetworkUnavailable();
+      }
+      console.error('Failed to generate follow-up question:', error);
+      return fallbackQuestion;
+    }
+  }
+
+  /**
+   * Determine the single best clarification question for user follow-up.
+   *
+   * @param analysis - AIAnalysisResult from the current analysis run.
+   * @returns A clarification question string.
+   */
+  getClarificationQuestion(analysis: AIAnalysisResult): string {
+    return (
+      analysis.requiredQuestions[0] ||
+      this.buildClarificationQuestion(analysis.extractedData, analysis.intent)
+    );
+  }
+
+  /**
+   * Create a follow-up question from extracted data and intent for missing fields.
+   *
+   * @param extractedData - Parsed data fields from AI parsing + deterministic parser.
+   * @param intent - Currently assigned intent category.
+   * @returns A user-friendly question for missing data.
+   */
+  private buildClarificationQuestion(
+    extractedData: Partial<TransactionData>,
+    intent: AIAnalysisResult['intent'],
+  ): string {
+    if (intent !== 'fiat_conversion') {
+      return 'Could you clarify what you want to do with your XLM transfer?';
+    }
+
+    if (!extractedData.amountIn && !extractedData.fiatAmount) {
+      return 'What amount of XLM would you like to deposit or what fiat amount should I target?';
+    }
+
+    if (!extractedData.fiatCurrency) {
+      return 'Which fiat currency should I prepare the payout in, like NGN, USD, or EUR?';
+    }
+
+    if (!extractedData.recipient) {
+      return 'Should I prepare this as a standard deposit for later payout review?';
+    }
+
+    return 'Could you confirm the last missing detail so I can prepare the correct transaction?';
+  }
+
+  /**
+   * Validate transaction object fields and produce errors and suggestions.
+   *
+   * @param data - TransactionData payload to check for required parameters.
+   * @returns Validation result with isValid, errors, and suggestions.
+   */
+  async validateTransactionData(data: TransactionData): Promise<{
+    isValid: boolean;
+    errors: string[];
+    suggestions: string[];
+  }> {
+    const errors: string[] = [];
+    const suggestions: string[] = [];
+
+    if (data.type === 'fiat_conversion') {
+      if (!data.tokenIn) errors.push('Token to convert is required');
+      if (!data.amountIn && !data.fiatAmount) {
+        errors.push('Either token amount or fiat amount is required');
+      }
+      if (!data.fiatCurrency) {
+        suggestions.push(
+          'Consider specifying the fiat currency (NGN, USD, etc.)',
+        );
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      suggestions,
+    };
+  }
+
+  /**
+   * Generate a user-facing receipt string for a transaction.
+   *
+   * @param transactionData - Optional transaction details used in receipt output.
+   * @returns A textual receipt templated string.
+   */
+  async generateConversionReceipt(transactionData: {
+    transactionId?: string;
+    txHash?: string;
+    amount?: string;
+    token?: string;
+    fiatCurrency?: string;
+    estimatedFiat?: string;
+    status?: string;
+  }): Promise<string> {
+    const currentTime = new Date().toLocaleString();
+    const estimatedCompletion = new Date(
+      Date.now() + 15 * 60000,
+    ).toLocaleString();
+
+    return `
+**STELLAR FIATBRIDGE CONVERSION RECEIPT**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Transaction Details**
+Transaction ID: ${transactionData.transactionId || 'TXN-' + Date.now()}
+Stellar Hash: ${transactionData.txHash || 'Pending...'}
+Status: ${transactionData.status || 'Processing'}
+Initiated: ${currentTime}
+Est. Completion: ${estimatedCompletion}
+
+**Conversion Summary**
+From: ${transactionData.amount || 'N/A'} ${transactionData.token || 'XLM'} (deposited to FiatBridge)
+To: ${transactionData.fiatCurrency || 'NGN'} ${transactionData.estimatedFiat || 'Calculating...'}
+Exchange Rate: Market rate at execution
+Platform Fee: 0.5% (Industry leading)
+
+**Bank Transfer Details**
+Method: Instant Bank Transfer
+Network: Stellar (${transactionData.token === 'XLM' ? 'Testnet' : 'Stellar'})
+Security: End-to-end encrypted
+Compliance: Fully regulated & compliant
+
+**Next Steps**
+1. Deposit confirmed on Stellar ledger
+2. FiatBridge smart contract execution complete
+3. Bank transfer will be initiated upon admin withdrawal
+4. Funds typically arrive within 5-15 minutes
+
+**Track your transaction**
+https://stellar.expert/explorer/testnet/tx/${transactionData.txHash || ''}
+
+**Support Available 24/7**
+Need assistance? I'm here to help track your transaction or answer any questions.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Thank you for using DexFiat on Stellar! 
+Your financial freedom is our priority.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        `.trim();
+  }
+
+  /**
+   * Generate a mock market update message (used in assistant responses).
+   *
+   * @param tokenSymbol - Optional token symbol, defaults to XLM.
+   * @returns A market update string including mock prices.
+   */
+  async generateMarketUpdate(tokenSymbol: string = 'XLM'): Promise<string> {
+    const mockPrice = tokenSymbol === 'ETH' ? 2850 : 1850;
+    const mockChange = Math.random() > 0.5 ? '+' : '-';
+    const mockPercent = (Math.random() * 5).toFixed(2);
+
+    return `
+**LIVE MARKET UPDATE - ${tokenSymbol.toUpperCase()}**
+
+Current Price: $${mockPrice.toLocaleString()} USD
+24h Change: ${mockChange}${mockPercent}%
+Best Time to Convert: ${Math.random() > 0.5 ? 'Good opportunity' : 'Consider waiting'}
+
+Our AI suggests: ${
+      Math.random() > 0.5
+        ? 'Market conditions are favorable for conversion'
+        : 'Price trending upward - you might want to hold or convert partially'
+    }
+
+Ready to convert? I can help you get the best rates with minimal fees.
+        `.trim();
+  }
+}

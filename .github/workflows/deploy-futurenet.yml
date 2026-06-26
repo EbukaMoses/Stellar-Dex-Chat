@@ -5,7 +5,7 @@ on:
     branches:
       - 'release/**'
     paths:
-      - 'stellar-contracts/**'
+      - 'Dechat/stellar-contracts/**'
       - '.github/workflows/deploy-futurenet.yml'
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: stellar-contracts
+        working-directory: Dechat/stellar-contracts
 
     steps:
       - name: Checkout repository
@@ -43,8 +43,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            stellar-contracts/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('stellar-contracts/Cargo.lock') }}
+            Dechat/stellar-contracts/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Dechat/stellar-contracts/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -59,8 +59,8 @@ jobs:
           FUTURENET_NETWORK_PASSPHRASE: 'Test SDF Future Network ; April 2020'
           OUTPUT_FILE: ./contract_id_futurenet.txt
         run: |
-          chmod +x ../scripts/deploy_fiat_bridge_futurenet.sh
-          ../scripts/deploy_fiat_bridge_futurenet.sh
+          chmod +x ./scripts/deploy_fiat_bridge_futurenet.sh
+          ./scripts/deploy_fiat_bridge_futurenet.sh
           
           # Pass outputs to GitHub Actions context
           CONTRACT_ID=$(cat "$OUTPUT_FILE")
@@ -71,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: contract-deployment-${{ github.sha }}
-          path: stellar-contracts/contract_id_futurenet.txt
+          path: Dechat/stellar-contracts/contract_id_futurenet.txt
           retention-days: 90
 
       - name: Create deployment status

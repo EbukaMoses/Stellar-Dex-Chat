@@ -2,14 +2,14 @@ name: Smart Contract CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, add_Soroban_invariant_test]
     paths:
-      - "stellar-contracts/**"
+      - "Dechat/stellar-contracts/**"
       - ".github/workflows/contracts.yml"
   push:
-    branches: [main]
+    branches: [main, add_Soroban_invariant_test]
     paths:
-      - "stellar-contracts/**"
+      - "Dechat/stellar-contracts/**"
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: stellar-contracts
+        working-directory: Dechat/stellar-contracts
 
     steps:
       - name: Checkout repository
@@ -40,8 +40,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            stellar-contracts/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('stellar-contracts/Cargo.lock') }}
+            Dechat/stellar-contracts/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Dechat/stellar-contracts/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 

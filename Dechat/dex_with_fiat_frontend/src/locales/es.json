@@ -1,0 +1,56 @@
+{
+  "common": {
+    "loading": "Cargando...",
+    "retry": "Reintentar",
+    "cancel": "Cancelar",
+    "send": "Enviar",
+    "copy": "Copiar",
+    "copied": "¡Copiado!",
+    "offline": "Sin conexión detectado. Acciones en cola.",
+    "online": "De vuelta en línea. Reproduciendo acciones...",
+    "offline_detected": "Sin conexión detectado. Las operaciones de solo lectura están en cola y se reintentarán cuando haya conexión.",
+    "queued": "en cola",
+    "retry_now": "Reintentar ahora",
+    "network": "Red",
+    "unknown": "Desconocido",
+    "expected": "esperado",
+    "withdraw_xlm": "Retirar XLM",
+    "deposit_xlm": "Depositar XLM",
+    "network_mismatch_warning": "Los depósitos y retiros están deshabilitados. Cambie a {expectedNetwork} en Freighter: Configuración → Red → {expectedNetwork}.",
+    "loading_stats": "Cargando estadísticas…",
+    "bridge_balance": "Saldo Bridge",
+    "deposit_limit": "Límite de depósito",
+    "deposit_desc": "Agregar fondos a su cuenta Stellar",
+    "rates_desc": "Consultar las tasas de conversión actuales",
+    "portfolio_desc": "Ver el saldo y el valor de sus activos",
+    "help_desc": "Obtener ayuda con las funciones de la plataforma"
+  },
+  "chat": {
+    "placeholder": "Pregunte sobre las tasas de XLM, depósito, o cualquier cosa de Stellar...",
+    "new_chat": "Nueva conversación",
+    "commands": "Comandos",
+    "suggestions": {
+      "rates": "Consultar tasas de conversión",
+      "portfolio": "Ver historial de transacciones",
+      "convert": "Convertir 100 USDC a USD"
+    },
+    "error_message": "Error al enviar el mensaje. Verifique su conexión.",
+    "cancelled_message": "Solicitud cancelada por el usuario."
+  },
+  "header": {
+    "title": "DexFiat · Stellar",
+    "subtitle": "XLM-to-Fiat con IA",
+    "connect": "Conectar Freighter",
+    "disconnect": "Desconectar",
+    "settings": "Configuración",
+    "receipts": "Recibos"
+  },
+  "receipt": {
+    "title": "Recibos de transacciones",
+    "no_receipts": "No se encontraron transacciones recientes.",
+    "hash": "Hash Tx",
+    "amount": "Monto",
+    "status": "Estado",
+    "date": "Fecha"
+  }
+}

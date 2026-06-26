@@ -4,11 +4,18 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - "Dechat/stellar-contracts/**"
+      - ".github/workflows/contract-tests.yml"
 
 jobs:
   test:
     name: Run cargo test
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Dechat/stellar-contracts
 
     steps:
       - name: Checkout repository
@@ -23,10 +30,10 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: stellar-contracts -> target
+          workspaces: Dechat/stellar-contracts -> target
 
       - name: Run clippy (deny warnings)
-        run: cd stellar-contracts && cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run contract tests
-        run: cd stellar-contracts && cargo test
+        run: cargo test
