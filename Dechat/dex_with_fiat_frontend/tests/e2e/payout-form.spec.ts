@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockSorobanRpc } from './helpers';
+import { mockSorobanRpc, MOCK_WALLET_ADDRESS } from './helpers';
 
 test.describe('Payout Form and Mocked Transfer Initiation', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,9 +36,7 @@ test.describe('Payout Form and Mocked Transfer Initiation', () => {
   test('should accept valid Stellar address format', async ({ page }) => {
     await page
       .locator('input[placeholder="G..."]')
-      .fill(
-        'GD5DJQD7KGYRY4TSK4K2V5J2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2',
-      );
+      .fill(MOCK_WALLET_ADDRESS);
     await page.locator('input[type="number"]').fill('0.5');
     await expect(page.getByRole('button', { name: /^withdraw$/i })).toBeEnabled();
   });
@@ -63,7 +61,9 @@ test.describe('Payout Form and Mocked Transfer Initiation', () => {
   test('should display correct wallet info for withdrawal', async ({ page }) => {
     const walletInfo = page.locator('[data-testid="wallet-info"]');
     await expect(walletInfo).toBeVisible();
-    await expect(walletInfo).toContainText(/GD5DJQD7/);
+    await expect(walletInfo).toContainText(
+      new RegExp(MOCK_WALLET_ADDRESS.slice(0, 8)),
+    );
     await expect(walletInfo).toContainText(/TESTNET/);
   });
 
@@ -75,14 +75,20 @@ test.describe('Payout Form and Mocked Transfer Initiation', () => {
       .click();
     await expect(page.getByRole('dialog')).not.toBeVisible();
   });
+});
 
-  test('should disable withdrawal when wallet is not connected', async ({
-    page,
-  }) => {
+test.describe('Payout Form — disconnected wallet', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockSorobanRpc(page);
     await page.goto('/test-stellar-fiat-modal?mode=withdraw&connected=false');
     await page.getByRole('dialog', { name: /withdraw from bridge/i }).waitFor({
       state: 'visible',
     });
+  });
+
+  test('should disable withdrawal when wallet is not connected', async ({
+    page,
+  }) => {
     await expect(page.getByRole('button', { name: /^withdraw$/i })).toBeDisabled();
     await expect(
       page.getByText(/connect your freighter wallet to continue/i),

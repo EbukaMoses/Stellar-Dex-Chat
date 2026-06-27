@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockSorobanRpc } from './helpers';
+import { mockSorobanRpc, MOCK_WALLET_ADDRESS } from './helpers';
 
 test.describe('StellarFiatModal E2E Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -50,7 +50,7 @@ test.describe('StellarFiatModal E2E Tests', () => {
   test.describe('Wallet display', () => {
     test('should show connected wallet info', async ({ page }) => {
       await expect(page.locator('[data-testid="wallet-info"]')).toContainText(
-        /GD5DJQD7/,
+        new RegExp(MOCK_WALLET_ADDRESS.slice(0, 8)),
       );
     });
   });

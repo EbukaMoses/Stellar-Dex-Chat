@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockSorobanRpc } from './helpers';
+import { mockSorobanRpc, MOCK_WALLET_ADDRESS } from './helpers';
 
 test.describe('Deposit Modal Validation and Success State', () => {
   test.beforeEach(async ({ page }) => {
@@ -51,17 +51,25 @@ test.describe('Deposit Modal Validation and Success State', () => {
   test('should display wallet connection info in modal', async ({ page }) => {
     const walletInfo = page.locator('[data-testid="wallet-info"]');
     await expect(walletInfo).toBeVisible();
-    await expect(walletInfo).toContainText(/GD5DJQD7/);
+    await expect(walletInfo).toContainText(
+      new RegExp(MOCK_WALLET_ADDRESS.slice(0, 8)),
+    );
     await expect(walletInfo).toContainText(/TESTNET/);
+  });
+});
+
+test.describe('Deposit Modal — disconnected wallet', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockSorobanRpc(page);
+    await page.goto('/test-stellar-fiat-modal?connected=false');
+    await page.getByRole('dialog', { name: /deposit to bridge/i }).waitFor({
+      state: 'visible',
+    });
   });
 
   test('should disable submit button when wallet is not connected', async ({
     page,
   }) => {
-    await page.goto('/test-stellar-fiat-modal?connected=false');
-    await page.getByRole('dialog', { name: /deposit to bridge/i }).waitFor({
-      state: 'visible',
-    });
     await expect(page.getByRole('button', { name: /^deposit$/i })).toBeDisabled();
     await expect(
       page.getByText(/connect your freighter wallet to continue/i),

@@ -17,8 +17,10 @@ test.describe('Wallet Connect UI Path', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: /start bridging/i }).click();
-    await expect(page).toHaveURL('/chat');
+    await Promise.all([
+      page.waitForURL('/chat'),
+      page.getByRole('button', { name: /start bridging/i }).click(),
+    ]);
     await expect(
       page.getByRole('button', { name: /connect freighter/i }),
     ).toBeVisible();
@@ -26,7 +28,9 @@ test.describe('Wallet Connect UI Path', () => {
 
   test('should connect wallet via E2E hook and show address', async ({ page }) => {
     await gotoChatConnected(page);
-    await expect(page.getByText(/GD5DJQ/i)).toBeVisible();
+    await expect(
+      page.getByText(new RegExp(MOCK_WALLET_ADDRESS.slice(0, 6), 'i')),
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Disconnect wallet' }),
     ).toBeVisible();

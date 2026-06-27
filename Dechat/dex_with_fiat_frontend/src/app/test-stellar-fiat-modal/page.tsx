@@ -5,7 +5,7 @@ import StellarFiatModal from '@/components/StellarFiatModal';
 import { useStellarWallet } from '@/contexts/StellarWalletContext';
 
 const MOCK_ADDRESS =
-  'GD5DJQD7KGYRY4TSK4K2V5J2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2';
+  'GBEFLW6RTALNHCL7HW2INWB4ASHZ7E6MF6E2IOIIMBVEAU2B2B4XLRQW';
 
 export default function TestStellarFiatModalPage() {
   const [isAdminMode, setIsAdminMode] = useState(false);
