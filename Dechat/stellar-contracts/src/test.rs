@@ -1076,7 +1076,7 @@ fn test_fallback_oracle_used_when_primary_stale() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_, bridge, _admin, token_addr, _token, token_sac) = setup_bridge(&env, 100_000);
+    let (_, bridge, _admin, token_addr, token, token_sac) = setup_bridge(&env, 100_000);
 
     // Set primary oracle to a stale oracle that returns None.
     let stale_id = env.register(StaleOracle, ());
