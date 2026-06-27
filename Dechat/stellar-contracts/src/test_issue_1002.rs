@@ -70,7 +70,7 @@ fn deposit_withdraw_fee_cycle() {
     assert_eq!(token.balance(&contract_id), deposit_amount);
 
     // Receipt is retrievable by index (first deposit → index 0)
-    let receipt = client.get_receipt_by_index(&0u64);
+    let receipt = client.get_receipt_by_index(&admin, &0u64);
     assert_eq!(receipt.amount, deposit_amount);
     assert!(!receipt.refunded);
 

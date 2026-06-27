@@ -4379,8 +4379,8 @@ impl FiatBridge {
     /// Checks if an address is on the denylist.
     ///
     /// Returns `true` if the address has been denied via [`deny_address`],
-    /// `false` otherwise. Denied addresses cannot deposit, withdraw, or
-    /// request withdrawals.
+    /// `false` otherwise. Denied addresses cannot deposit, withdraw,
+    /// request withdrawals, or read user-specific contract state.
     ///
     /// # Arguments
     /// * `env` - The contract environment
@@ -5100,26 +5100,42 @@ impl FiatBridge {
     }
 
     /// Returns the total amount `user` has deposited into the bridge (all time).
-    pub fn get_user_deposited(env: Env, user: Address) -> i128 {
-        env.storage()
+    ///
+    /// # Errors
+    /// - [`Error::AddressDenied`] if `user` is on the denylist.
+    pub fn get_user_deposited(env: Env, user: Address) -> Result<i128, Error> {
+        Self::reject_if_denied(&env, &user)?;
+        Ok(env
+            .storage()
             .instance()
             .get(&DataKey::UserDeposited(user))
-            .unwrap_or(0)
+            .unwrap_or(0))
     }
 
     /// Returns the rolling 24-hour deposit record for `user`, or `None` if no deposit made.
-    pub fn get_daily_deposit_record(env: Env, user: Address) -> Option<UserDailyVolume> {
-        let mut vol: UserDailyVolume = env
+    ///
+    /// # Errors
+    /// - [`Error::AddressDenied`] if `user` is on the denylist.
+    pub fn get_daily_deposit_record(
+        env: Env,
+        user: Address,
+    ) -> Result<Option<UserDailyVolume>, Error> {
+        Self::reject_if_denied(&env, &user)?;
+        let mut vol: UserDailyVolume = match env
             .storage()
             .instance()
-            .get(&DataKey::UserDailyVolume(user))?;
+            .get(&DataKey::UserDailyVolume(user))
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        };
 
         let curr = env.ledger().sequence();
         if curr >= vol.window_start.saturating_add(WINDOW_LEDGERS) {
             vol.usd_cents = 0;
             vol.window_start = curr;
         }
-        Some(vol)
+        Ok(Some(vol))
     }
 
     /// Returns the cumulative amount deposited across all users.
@@ -5171,11 +5187,14 @@ impl FiatBridge {
     /// Returns the deposit receipt at sequential index `idx`.
     ///
     /// # Parameters
+    /// - `caller` – Authenticated caller; denied addresses are rejected.
     /// - `idx` – Zero-based receipt index.
     ///
     /// # Errors
+    /// - [`Error::AddressDenied`] if `caller` is on the denylist.
     /// - [`Error::NotFound`] if no receipt exists at `idx`.
-    pub fn get_receipt_by_index(env: Env, idx: u64) -> Result<Receipt, Error> {
+    pub fn get_receipt_by_index(env: Env, caller: Address, idx: u64) -> Result<Receipt, Error> {
+        Self::require_authed_not_denied(&env, &caller)?;
         // ── Issue #511: circuit breaker guard ────────────────────────────
         if Self::is_circuit_breaker_tripped(env.clone()) {
             CircuitBreakerBlockedEvent {
@@ -5205,8 +5224,16 @@ impl FiatBridge {
     }
 
     /// Returns the withdrawal request with the given `id`, or `None` if not found.
-    pub fn get_withdrawal_request(env: Env, id: u64) -> Option<WithdrawRequest> {
-        env.storage().persistent().get(&DataKey::WithdrawQueue(id))
+    ///
+    /// # Errors
+    /// - [`Error::AddressDenied`] if the request recipient is on the denylist.
+    pub fn get_withdrawal_request(env: Env, id: u64) -> Result<Option<WithdrawRequest>, Error> {
+        let request: Option<WithdrawRequest> =
+            env.storage().persistent().get(&DataKey::WithdrawQueue(id));
+        if let Some(ref req) = request {
+            Self::reject_if_denied(&env, &req.to)?;
+        }
+        Ok(request)
     }
 
     /// Returns the number of withdrawal requests currently in the queue.
@@ -5240,8 +5267,12 @@ impl FiatBridge {
             .map(|q| env.ledger().sequence().saturating_sub(q))
     }
     /// Returns the ledger number of `user`'s most recent deposit, or `None`.
-    pub fn get_last_deposit_ledger(env: Env, user: Address) -> Option<u32> {
-        env.storage().temporary().get(&DataKey::LastDeposit(user))
+    ///
+    /// # Errors
+    /// - [`Error::AddressDenied`] if `user` is on the denylist.
+    pub fn get_last_deposit_ledger(env: Env, user: Address) -> Result<Option<u32>, Error> {
+        Self::reject_if_denied(&env, &user)?;
+        Ok(env.storage().temporary().get(&DataKey::LastDeposit(user)))
     }
     /// Returns the ledger at which the admin renouncement was queued, or `None`.
     pub fn get_pending_renounce_ledger(env: Env) -> Option<u32> {
@@ -5420,7 +5451,11 @@ impl FiatBridge {
     }
 
     /// Returns the amount `user` has withdrawn in the current 24-hour window.
-    pub fn get_user_daily_withdrawal(env: Env, user: Address) -> i128 {
+    ///
+    /// # Errors
+    /// - [`Error::AddressDenied`] if `user` is on the denylist.
+    pub fn get_user_daily_withdrawal(env: Env, user: Address) -> Result<i128, Error> {
+        Self::reject_if_denied(&env, &user)?;
         let curr = env.ledger().sequence();
         let record: UserDailyWithdrawal = env
             .storage()
@@ -5430,11 +5465,11 @@ impl FiatBridge {
                 amount: 0,
                 window_start: curr,
             });
-        if curr >= record.window_start + WINDOW_LEDGERS {
+        Ok(if curr >= record.window_start + WINDOW_LEDGERS {
             0
         } else {
             record.amount
-        }
+        })
     }
 
     /// Enforce the per-user daily withdrawal quota.
@@ -5556,6 +5591,24 @@ impl FiatBridge {
         }
 
         Ok(())
+    }
+
+    /// Returns [`Error::AddressDenied`] when `address` is on the denylist.
+    fn reject_if_denied(env: &Env, address: &Address) -> Result<(), Error> {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Denied(address.clone()))
+        {
+            return Err(Error::AddressDenied);
+        }
+        Ok(())
+    }
+
+    /// Requires `caller` to authenticate and not be on the denylist.
+    fn require_authed_not_denied(env: &Env, caller: &Address) -> Result<(), Error> {
+        caller.require_auth();
+        Self::reject_if_denied(env, caller)
     }
 
     fn extend_receipt_ttls_for_depositor(env: &Env, depositor: &Address, min_ttl: u32) {
@@ -5778,8 +5831,13 @@ impl FiatBridge {
     ///
     /// * `Some(EscrowRecord)` - The migrated record if found.
     /// * `None` - If the record doesn't exist or hasn't been migrated.
-    pub fn get_escrow_record(env: Env, id: u64) -> Option<EscrowRecord> {
-        env.storage().persistent().get(&DataKey::EscrowRecord(id))
+    pub fn get_escrow_record(env: Env, id: u64) -> Result<Option<EscrowRecord>, Error> {
+        let record: Option<EscrowRecord> =
+            env.storage().persistent().get(&DataKey::EscrowRecord(id));
+        if let Some(ref rec) = record {
+            Self::reject_if_denied(&env, &rec.depositor)?;
+        }
+        Ok(record)
     }
 
     /// Gets the current migration progress cursor.

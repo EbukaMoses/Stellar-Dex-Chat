@@ -1727,6 +1727,49 @@ fn test_deny_address_blocks_request_withdrawal() {
 }
 
 #[test]
+fn test_deny_address_blocks_state_reads() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, admin, token_addr, _, token_sac) = setup_bridge(&env, 10_000);
+    let user = Address::generate(&env);
+    token_sac.mint(&user, &5_000);
+
+    bridge.deposit(&user, &500, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    let req_id = bridge.request_withdrawal(&user, &100, &token_addr, &None, &0);
+    bridge.deny_address(&user);
+
+    assert_eq!(
+        bridge.try_get_receipt_by_index(&user, &0),
+        Err(Ok(Error::AddressDenied))
+    );
+    assert_eq!(
+        bridge.try_get_user_deposited(&user),
+        Err(Ok(Error::AddressDenied))
+    );
+    assert_eq!(
+        bridge.try_get_daily_deposit_record(&user),
+        Err(Ok(Error::AddressDenied))
+    );
+    assert_eq!(
+        bridge.try_get_last_deposit_ledger(&user),
+        Err(Ok(Error::AddressDenied))
+    );
+    assert_eq!(
+        bridge.try_get_user_daily_withdrawal(&user),
+        Err(Ok(Error::AddressDenied))
+    );
+    assert_eq!(
+        bridge.try_get_withdrawal_request(&req_id),
+        Err(Ok(Error::AddressDenied))
+    );
+
+    // Non-denied callers can still read receipt data.
+    let receipt = bridge.get_receipt_by_index(&admin, &0);
+    assert_eq!(receipt.amount, 500);
+}
+
+#[test]
 fn test_migrate_escrow_already_complete() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3015,7 +3058,7 @@ fn test_get_receipt_by_index_valid() {
 
     let receipt_hash = bridge.deposit(&user, &100, &token_addr, &Bytes::new(&env), &0, &0, &None);
 
-    let receipt = bridge.get_receipt_by_index(&0);
+    let receipt = bridge.get_receipt_by_index(&admin, &0);
     assert_eq!(receipt.id, receipt_hash);
     assert_eq!(receipt.depositor, user);
     assert_eq!(receipt.amount, 100);
@@ -3034,12 +3077,12 @@ fn test_get_receipt_by_index_out_of_range() {
 
     // Index 1 does not exist (only one deposit at index 0)
     assert_eq!(
-        bridge.try_get_receipt_by_index(&1),
+        bridge.try_get_receipt_by_index(&admin, &1),
         Err(Ok(Error::ReceiptIndexOutOfBounds))
     );
     // Large out-of-range index
     assert_eq!(
-        bridge.try_get_receipt_by_index(&999),
+        bridge.try_get_receipt_by_index(&admin, &999),
         Err(Ok(Error::ReceiptIndexOutOfBounds))
     );
 }
@@ -3056,16 +3099,16 @@ fn test_get_receipt_by_index_nonexistent_index() {
     bridge.deposit(&user, &100, &token_addr, &Bytes::new(&env), &0, &0, &None);
 
     // The receipt at index 0 should be accessible
-    let receipt = bridge.get_receipt_by_index(&0);
+    let receipt = bridge.get_receipt_by_index(&admin, &0);
     assert_eq!(receipt.amount, 100);
 
     // Indexes that were never written return ReceiptIndexOutOfBounds.
     assert_eq!(
-        bridge.try_get_receipt_by_index(&50),
+        bridge.try_get_receipt_by_index(&admin, &50),
         Err(Ok(Error::ReceiptIndexOutOfBounds))
     );
     assert_eq!(
-        bridge.try_get_receipt_by_index(&u64::MAX),
+        bridge.try_get_receipt_by_index(&admin, &u64::MAX),
         Err(Ok(Error::ReceiptIndexOutOfBounds))
     );
 }
@@ -3086,7 +3129,7 @@ fn test_get_receipt_by_index_stale_temporary_index_returns_not_found() {
     });
 
     assert_eq!(
-        bridge.try_get_receipt_by_index(&0),
+        bridge.try_get_receipt_by_index(&user, &0),
         Err(Ok(Error::ReceiptNotFound))
     );
 }
@@ -3109,7 +3152,7 @@ fn test_get_receipt_by_index_missing_persistent_receipt_returns_not_found() {
     });
 
     assert_eq!(
-        bridge.try_get_receipt_by_index(&0),
+        bridge.try_get_receipt_by_index(&user, &0),
         Err(Ok(Error::ReceiptNotFound))
     );
 }
@@ -3126,7 +3169,7 @@ fn test_event_version_get_receipt_by_index() {
 
     // get_receipt_by_index is a read-only query and does not emit events;
     // verify the receipt is returned with the expected versioned deposit id.
-    let receipt = bridge.get_receipt_by_index(&0);
+    let receipt = bridge.get_receipt_by_index(&user, &0);
     assert_eq!(receipt.amount, 100);
 }
 
@@ -4518,7 +4561,7 @@ fn test_deposit_invariant_receipt_issued_event() {
     let receipt_id = bridge.deposit(&user, &100, &token_addr, &Bytes::new(&env), &0, &0, &None);
 
     // Verify receipt was created (receipts are indexed, so we get by index 0)
-    let receipt = bridge.get_receipt_by_index(&0);
+    let receipt = bridge.get_receipt_by_index(&user, &0);
     assert_eq!(receipt.depositor, user);
     assert_eq!(receipt.amount, 100);
     assert!(!receipt.refunded);
