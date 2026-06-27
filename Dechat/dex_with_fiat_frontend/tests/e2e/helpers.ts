@@ -219,6 +219,9 @@ export async function gotoAdminReconciliation(page: Page): Promise<void> {
     page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
   ).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('Loading...')).toBeHidden({ timeout: 15_000 });
+  await expect(page.locator('#reconciliation-status-filter')).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 /** Open the deposit modal from the chat network badge. */

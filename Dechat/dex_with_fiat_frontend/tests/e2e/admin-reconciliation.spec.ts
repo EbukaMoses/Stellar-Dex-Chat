@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   gotoAdminReconciliation,
   mockSorobanRpc,
+  mockReconciliationApi,
   MOCK_ADMIN_ADDRESS,
   connectMockWallet,
 } from './helpers';
@@ -25,12 +26,12 @@ test.describe('Admin Reconciliation E2E', () => {
     });
 
     test('renders filter controls', async ({ page }) => {
-      const statusSelect = page.getByLabel(/Status/i);
+      const statusSelect = page.locator('#reconciliation-status-filter');
       await expect(statusSelect).toBeVisible({ timeout: 10_000 });
       await expect(statusSelect).toHaveValue('all');
 
-      await expect(page.getByLabel(/Start Date/i)).toBeVisible();
-      await expect(page.getByLabel(/End Date/i)).toBeVisible();
+      await expect(page.locator('#reconciliation-start-date')).toBeVisible();
+      await expect(page.locator('#reconciliation-end-date')).toBeVisible();
     });
 
     test('renders reconciliation table with records', async ({ page }) => {
@@ -43,7 +44,7 @@ test.describe('Admin Reconciliation E2E', () => {
 
   test.describe('Filtering', () => {
     test('filters records by status', async ({ page }) => {
-      const statusSelect = page.getByLabel(/Status/i);
+      const statusSelect = page.locator('#reconciliation-status-filter');
       await statusSelect.selectOption('matched');
 
       const rows = page.locator('tbody tr');
@@ -56,12 +57,12 @@ test.describe('Admin Reconciliation E2E', () => {
     test('shows "No records found" when filter matches nothing', async ({
       page,
     }) => {
-      const statusSelect = page.getByLabel(/Status/i);
+      const statusSelect = page.locator('#reconciliation-status-filter');
       await statusSelect.selectOption('error');
 
       // Narrow date range so no records match
-      await page.getByLabel(/Start Date/i).fill('2099-01-01');
-      await page.getByLabel(/End Date/i).fill('2099-12-31');
+      await page.locator('#reconciliation-start-date').fill('2099-01-01');
+      await page.locator('#reconciliation-end-date').fill('2099-12-31');
 
       await expect(
         page.getByText(/No records found matching the filters/i),
@@ -71,7 +72,7 @@ test.describe('Admin Reconciliation E2E', () => {
     test('resets to all records when status filter is changed back', async ({
       page,
     }) => {
-      const statusSelect = page.getByLabel(/Status/i);
+      const statusSelect = page.locator('#reconciliation-status-filter');
 
       await statusSelect.selectOption('matched');
       await statusSelect.selectOption('all');
@@ -97,22 +98,27 @@ test.describe('Admin Reconciliation E2E', () => {
       expect(download.suggestedFilename()).toMatch(/reconciliation.*\.csv/);
     });
   });
+});
 
-  test.describe('Non-admin redirect', () => {
-    test('non-admin users are redirected away from reconciliation page', async ({
-      page,
-    }) => {
-      await mockSorobanRpc(page, { adminAddress: MOCK_ADMIN_ADDRESS });
-      await page.goto('/admin/reconciliation');
-      await page.waitForLoadState('domcontentloaded');
-      await connectMockWallet(page, NON_ADMIN_ADDRESS);
+test.describe('Admin Reconciliation E2E — access control', () => {
+  test('non-admin users are redirected away from reconciliation page', async ({
+    page,
+  }) => {
+    await mockSorobanRpc(page, { adminAddress: MOCK_ADMIN_ADDRESS });
+    await mockReconciliationApi(page);
+    await page.goto('/admin/reconciliation');
+    await page.waitForLoadState('domcontentloaded');
+    await page.evaluate(() => window.clearBridgeCache?.());
+    await connectMockWallet(page, NON_ADMIN_ADDRESS);
+    await expect(page.getByText(/Verifying admin access/i)).toBeHidden({
+      timeout: 15_000,
+    });
 
-      await expect(
-        page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
-      ).toBeHidden({ timeout: 15_000 });
-      await expect(page.getByText(/Stellar Wave|Connect|Launch/i).first()).toBeVisible({
-        timeout: 15_000,
-      });
+    await expect(
+      page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
+    ).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByText(/Connect Freighter|Launch App/i).first()).toBeVisible({
+      timeout: 15_000,
     });
   });
 });
