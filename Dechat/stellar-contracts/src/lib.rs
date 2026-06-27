@@ -5171,21 +5171,24 @@ impl FiatBridge {
 
     /// Returns the cumulative amount deposited across all users.
     ///
-    /// # Errors
-    /// - [`Error::NotInitialized`]      if the contract has not been initialised.
-    /// - [`Error::TokenNotWhitelisted`] if no token config exists.
-    pub fn get_total_deposited(env: Env) -> Result<i128, Error> {
-        let tok = env
+    /// Issue #1023: this is a public, unauthenticated view intended for
+    /// dashboards. It returns `0` on empty state — before initialization or
+    /// when no token config exists yet — rather than erroring, so callers can
+    /// treat the result as a plain running total.
+    pub fn get_total_deposited(env: Env) -> i128 {
+        match env
             .storage()
             .instance()
             .get::<_, Address>(&DataKey::Token)
-            .ok_or(Error::NotInitialized)?;
-        Ok(env
-            .storage()
-            .persistent()
-            .get::<_, TokenConfig>(&DataKey::TokenRegistry(tok))
-            .ok_or(Error::InternalError)?
-            .total_deposited)
+        {
+            Some(tok) => env
+                .storage()
+                .persistent()
+                .get::<_, TokenConfig>(&DataKey::TokenRegistry(tok))
+                .map(|c| c.total_deposited)
+                .unwrap_or(0),
+            None => 0,
+        }
     }
     /// Returns the current withdrawal lock period in ledgers.
     pub fn get_lock_period(env: Env) -> u32 {
