@@ -1,0 +1,132 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e5]:
+        - button "Clear all history" [ref=e9]:
+          - img [ref=e10]
+        - generic [ref=e16]:
+          - img [ref=e17]
+          - paragraph [ref=e19]: No conversations yet
+          - paragraph [ref=e20]: Start chatting to see your history here
+          - button "New Conversation" [ref=e21]
+        - generic [ref=e22]:
+          - paragraph [ref=e24]: Prices unavailable
+          - generic [ref=e25]:
+            - img [ref=e28]
+            - generic [ref=e34]: "0"
+        - button "New Conversation" [ref=e36]:
+          - img [ref=e37]
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - button [ref=e41]:
+              - img [ref=e42]
+            - generic [ref=e43]:
+              - img [ref=e45]
+              - generic [ref=e47]:
+                - heading "DexFiat · Stellar" [level=1] [ref=e48]
+                - paragraph [ref=e49]: AI-Powered XLM-to-Fiat
+            - status "API is operational" [ref=e50]: API Healthy
+          - generic [ref=e52]:
+            - button "New chat" [ref=e53]:
+              - img [ref=e54]
+            - button "Notifications" [ref=e56]:
+              - img [ref=e57]
+            - button "Search chat history" [ref=e60]:
+              - img [ref=e61]
+            - button "Toggle split-view" [ref=e64]:
+              - img [ref=e65]
+            - button "Receipts" [ref=e67]:
+              - img [ref=e68]
+            - button "Open settings" [ref=e71]:
+              - img [ref=e72]
+            - button [ref=e75]:
+              - img [ref=e76]
+            - button "Connect Freighter" [ref=e78]:
+              - img [ref=e79]
+              - text: Connect Freighter
+        - generic [ref=e82]:
+          - generic [ref=e84]:
+            - generic [ref=e85]:
+              - generic [ref=e86]:
+                - img [ref=e87]
+                - text: AI-Powered Bridge
+              - heading "Welcome to DexFiat" [level=1] [ref=e89]
+              - paragraph [ref=e90]: The most intuitive way to convert your Stellar assets to fiat currency. Follow the steps below to get started.
+            - generic [ref=e91]:
+              - generic [ref=e92]:
+                - button "Dismiss" [ref=e93]:
+                  - img [ref=e94]
+                - generic [ref=e97]:
+                  - img [ref=e99]
+                  - heading "Connect Wallet" [level=3] [ref=e102]
+                  - paragraph [ref=e103]: Connect your Freighter wallet to securely sign transactions on the Stellar network.
+                  - button "Connect Now" [ref=e104]:
+                    - text: Connect Now
+                    - img [ref=e105]
+              - generic [ref=e107]:
+                - button "Dismiss" [ref=e108]:
+                  - img [ref=e109]
+                - generic [ref=e112]:
+                  - img [ref=e114]
+                  - heading "Deposit XLM" [level=3] [ref=e117]
+                  - paragraph [ref=e118]: Lock your XLM assets into our secure bridge contract to initiate a conversion to fiat.
+                  - button "Start Deposit" [ref=e119]:
+                    - text: Start Deposit
+                    - img [ref=e120]
+              - generic [ref=e122]:
+                - button "Dismiss" [ref=e123]:
+                  - img [ref=e124]
+                - generic [ref=e127]:
+                  - img [ref=e129]
+                  - heading "Setup Payout" [level=3] [ref=e131]
+                  - paragraph [ref=e132]: Configure your local bank details to receive Naira or USD once your deposit is confirmed.
+                  - button "Setup Bank" [ref=e133]:
+                    - text: Setup Bank
+                    - img [ref=e134]
+          - generic [ref=e136]:
+            - generic [ref=e137]:
+              - textbox "Ask about XLM rates, deposit, or anything Stellar…" [ref=e139]
+              - button "Send message (Cmd+Enter)" [disabled] [ref=e140]:
+                - img [ref=e141]
+            - paragraph [ref=e144]: Send message with Cmd+Enter. The send button stays disabled while a request is pending.
+            - generic [ref=e145]:
+              - button "Convert 100 USDC to USD" [ref=e146]
+              - button "Check conversion rates" [ref=e147]
+              - button "View transaction history" [ref=e148]
+          - generic [ref=e150]:
+            - generic [ref=e151]: Wallet connection timeline
+            - list "Wallet connection timeline" [ref=e152]:
+              - listitem [ref=e153]:
+                - generic [ref=e156]: Connect wallet
+              - listitem [ref=e157]:
+                - generic [ref=e160]: Sign session
+              - listitem [ref=e161]:
+                - generic [ref=e164]: Verify network
+      - dialog [ref=e165]:
+        - generic [ref=e166]:
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - img [ref=e169]
+              - heading [level=2] [ref=e172]: Transaction Receipts
+            - button [ref=e174]:
+              - img [ref=e175]
+          - paragraph [ref=e238]: Stellar DexFiat Verified Receipt
+  - alert [ref=e239]
+  - generic [ref=e244] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e245]:
+      - img [ref=e246]
+    - generic [ref=e249]:
+      - button "Open issues overlay" [ref=e250]:
+        - generic [ref=e251]:
+          - generic [ref=e252]: "1"
+          - generic [ref=e253]: "2"
+        - generic [ref=e254]:
+          - text: Issue
+          - generic [ref=e255]: s
+      - button "Collapse issues badge" [ref=e256]:
+        - img [ref=e257]
+```
