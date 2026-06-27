@@ -561,23 +561,27 @@ What would you like to do today? I'm here to make your XLM-to-fiat journey smoot
   // Restore any messages still queued in IndexedDB from a previous page
   // load (covers a reload while offline) and try to send them right away.
   useEffect(() => {
-    void getAllQueuedMessages().then((records) => {
-      if (records.length === 0) {
-        return;
-      }
-      records
-        .sort((a, b) => a.queuedAt - b.queuedAt)
-        .forEach((record) => {
-          queuedSendsRef.current.push({
-            content: record.content,
-            optimisticUserId: record.optimisticUserId,
-            pendingAssistantId: record.pendingAssistantId,
-            machineSnapshot: record.machineSnapshot as QueuedSend['machineSnapshot'],
+    void getAllQueuedMessages()
+      .then((records) => {
+        if (records.length === 0) {
+          return;
+        }
+        records
+          .sort((a, b) => a.queuedAt - b.queuedAt)
+          .forEach((record) => {
+            queuedSendsRef.current.push({
+              content: record.content,
+              optimisticUserId: record.optimisticUserId,
+              pendingAssistantId: record.pendingAssistantId,
+              machineSnapshot: record.machineSnapshot as QueuedSend['machineSnapshot'],
+            });
           });
-        });
-      setQueuedMessageCount(queuedSendsRef.current.length);
-      void replayQueuedSends();
-    });
+        setQueuedMessageCount(queuedSendsRef.current.length);
+        void replayQueuedSends();
+      })
+      .catch(() => {
+        // Offline queue is best-effort when IndexedDB is unavailable or fails to open.
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
