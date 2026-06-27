@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { xdr } from '@stellar/stellar-sdk';
 
 /** Valid Stellar testnet address used for admin E2E flows. */
 export const MOCK_ADMIN_ADDRESS =
@@ -7,6 +8,45 @@ export const MOCK_ADMIN_ADDRESS =
 /** ScVal XDR (base64) for {@link MOCK_ADMIN_ADDRESS} — used in Soroban simulate mocks. */
 const MOCK_ADMIN_SCVAL_XDR =
   'AAAAEgAAAAAAAAAASFXb0ZgW04l/PbSG2DwEj5+TzC+JpDkIYGpAU0HQeXU=';
+
+/** i128 ScVal XDR mocks for read-only bridge contract view calls (stroops). */
+const MOCK_BRIDGE_LIMIT_XDR = 'AAAACgAAAAAAAAAAAAAAF0h26AA='; // 10_000 XLM
+const MOCK_CONTRACT_BALANCE_XDR = 'AAAACgAAAAAAAAAAAAAAC6Q7dAA='; // 5_000 XLM
+const MOCK_TOTAL_DEPOSITED_XDR = 'AAAACgAAAAAAAAAAAAAABdIdugA='; // 2_500 XLM
+
+function getSimulateFunctionName(transactionXdr: string): string | null {
+  try {
+    const envelope = xdr.TransactionEnvelope.fromXDR(transactionXdr, 'base64');
+    const op = envelope.v1().tx().operations()[0];
+    const body = op.body();
+    if (body.switch().name !== 'invokeHostFunctionOp') {
+      return null;
+    }
+    return body
+      .invokeHostFunctionOp()
+      .hostFunction()
+      .invokeContract()
+      .functionName()
+      .toString();
+  } catch {
+    return null;
+  }
+}
+
+function scvalXdrForSimulateFunction(functionName: string | null): string {
+  switch (functionName) {
+    case 'get_admin':
+      return MOCK_ADMIN_SCVAL_XDR;
+    case 'get_limit':
+      return MOCK_BRIDGE_LIMIT_XDR;
+    case 'get_balance':
+      return MOCK_CONTRACT_BALANCE_XDR;
+    case 'get_total_deposited':
+      return MOCK_TOTAL_DEPOSITED_XDR;
+    default:
+      return MOCK_BRIDGE_LIMIT_XDR;
+  }
+}
 
 export const MOCK_WALLET_ADDRESS = MOCK_ADMIN_ADDRESS;
 
@@ -42,6 +82,19 @@ export async function mockSorobanRpc(
   options: { adminAddress?: string } = {},
 ): Promise<void> {
   const adminAddress = options.adminAddress ?? MOCK_WALLET_ADDRESS;
+
+  await page.route('**/horizon-testnet.stellar.org/accounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: adminAddress,
+        account_id: adminAddress,
+        sequence: '123456789',
+        balances: [{ balance: '1000.0000000', asset_type: 'native' }],
+      }),
+    });
+  });
 
   await page.route('**/*stellar.org/**', async (route) => {
     if (route.request().method() !== 'POST') {
@@ -103,6 +156,13 @@ export async function mockSorobanRpc(
     }
 
     if (method === 'simulateTransaction') {
+      const params = (body as { params?: { transaction?: string } } | null)
+        ?.params;
+      const functionName = params?.transaction
+        ? getSimulateFunctionName(params.transaction)
+        : null;
+      const resultXdr = scvalXdrForSimulateFunction(functionName);
+
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -111,7 +171,7 @@ export async function mockSorobanRpc(
           id,
           result: {
             transactionData: '',
-            results: [{ xdr: MOCK_ADMIN_SCVAL_XDR }],
+            results: [{ xdr: resultXdr }],
             cost: { cpuInsns: '0', memBytes: '0' },
             latestLedger: 12_345,
             minResourceFee: '0',

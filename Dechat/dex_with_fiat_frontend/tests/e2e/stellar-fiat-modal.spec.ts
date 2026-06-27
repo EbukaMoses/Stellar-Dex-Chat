@@ -5,8 +5,10 @@ test.describe('StellarFiatModal E2E Tests', () => {
   test.beforeEach(async ({ page }) => {
     await mockSorobanRpc(page);
     await page.goto('/test-stellar-fiat-modal');
-    await page.getByRole('dialog', { name: /deposit to bridge/i }).waitFor({
-      state: 'visible',
+    const dialog = page.getByRole('dialog', { name: /deposit to bridge/i });
+    await dialog.waitFor({ state: 'visible' });
+    await expect(dialog.locator('input[type="number"]').first()).toBeVisible({
+      timeout: 15_000,
     });
   });
 
@@ -42,8 +44,9 @@ test.describe('StellarFiatModal E2E Tests', () => {
     });
 
     test('should update amount with preset buttons', async ({ page }) => {
-      await page.getByRole('button', { name: '5', exact: true }).first().click();
-      await expect(page.locator('input[type="number"]').first()).toHaveValue('5');
+      const dialog = page.getByRole('dialog', { name: /deposit to bridge/i });
+      await dialog.getByRole('button', { name: '5', exact: true }).click();
+      await expect(dialog.locator('input[type="number"]').first()).toHaveValue('5');
     });
   });
 

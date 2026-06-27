@@ -88,33 +88,46 @@ test.describe('BankDetailsModal — Step 1: bank selection', () => {
   test.beforeEach(async ({ page }) => {
     await mockBankApis(page);
     await page.goto('/test-bank-details');
+    await expect(
+      page.getByRole('dialog', { name: /fiat payout/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: /fiat payout/i }).getByRole('button', {
+        name: 'Access Bank',
+      }),
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('modal opens and shows step 1 with bank list', async ({ page }) => {
     const dialog = page.getByRole('dialog', { name: /fiat payout/i });
     await expect(dialog).toBeVisible();
-    await expect(page.getByText('Access Bank')).toBeVisible();
-    await expect(page.getByText('Zenith Bank')).toBeVisible();
+    await expect(dialog.getByText('Access Bank')).toBeVisible();
+    await expect(dialog.getByText('Zenith Bank')).toBeVisible();
   });
 
   test('Next button is disabled until a bank is selected', async ({ page }) => {
-    const nextBtn = page.getByRole('button', { name: /next/i });
+    const dialog = page.getByRole('dialog', { name: /fiat payout/i });
+    const nextBtn = dialog.getByRole('button', { name: /^next$/i });
     await expect(nextBtn).toBeDisabled();
-    await page.getByRole('button', { name: 'Access Bank' }).click();
+    await dialog.getByRole('button', { name: 'Access Bank' }).click();
     await expect(nextBtn).toBeEnabled();
   });
 
   test('bank search filters the list', async ({ page }) => {
-    await page.getByPlaceholder(/search banks/i).fill('Zenith');
-    await expect(page.getByRole('button', { name: 'Zenith Bank' })).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: /fiat payout/i });
+    const searchInput = dialog.getByPlaceholder(/search banks/i);
+    await searchInput.fill('Zenith');
+    await expect(searchInput).toHaveValue('Zenith');
+    await expect(dialog.getByRole('button', { name: 'Zenith Bank' })).toBeVisible();
     await expect(
-      page.getByRole('button', { name: 'Access Bank' }),
+      dialog.getByRole('button', { name: 'Access Bank' }),
     ).not.toBeVisible();
   });
 
   test('shows "No banks found" when search has no match', async ({ page }) => {
-    await page.getByPlaceholder(/search banks/i).fill('XYZ_NONEXISTENT');
-    await expect(page.getByText(/no banks found/i)).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: /fiat payout/i });
+    await dialog.getByPlaceholder(/search banks/i).fill('XYZ_NONEXISTENT');
+    await expect(dialog.getByText(/no banks found/i)).toBeVisible();
   });
 
   test('shows error state when bank API fails', async ({ page }) => {

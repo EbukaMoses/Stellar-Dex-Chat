@@ -5,8 +5,10 @@ test.describe('Deposit Modal Validation and Success State', () => {
   test.beforeEach(async ({ page }) => {
     await mockSorobanRpc(page);
     await page.goto('/test-stellar-fiat-modal');
-    await page.getByRole('dialog', { name: /deposit to bridge/i }).waitFor({
-      state: 'visible',
+    const dialog = page.getByRole('dialog', { name: /deposit to bridge/i });
+    await dialog.waitFor({ state: 'visible' });
+    await expect(dialog.locator('input[type="number"]').first()).toBeVisible({
+      timeout: 15_000,
     });
   });
 
