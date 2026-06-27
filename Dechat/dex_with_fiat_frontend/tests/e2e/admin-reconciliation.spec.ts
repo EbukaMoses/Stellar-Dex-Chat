@@ -26,12 +26,12 @@ test.describe('Admin Reconciliation E2E', () => {
     });
 
     test('renders filter controls', async ({ page }) => {
-      const statusSelect = page.locator('#reconciliation-status-filter');
+      const statusSelect = page.getByRole('combobox').first();
       await expect(statusSelect).toBeVisible({ timeout: 10_000 });
       await expect(statusSelect).toHaveValue('all');
 
-      await expect(page.locator('#reconciliation-start-date')).toBeVisible();
-      await expect(page.locator('#reconciliation-end-date')).toBeVisible();
+      const dateInputs = page.locator('input[type="date"]');
+      await expect(dateInputs).toHaveCount(2);
     });
 
     test('renders reconciliation table with records', async ({ page }) => {
@@ -44,7 +44,7 @@ test.describe('Admin Reconciliation E2E', () => {
 
   test.describe('Filtering', () => {
     test('filters records by status', async ({ page }) => {
-      const statusSelect = page.locator('#reconciliation-status-filter');
+      const statusSelect = page.getByRole('combobox').first();
       await statusSelect.selectOption('matched');
 
       const rows = page.locator('tbody tr');
@@ -57,12 +57,13 @@ test.describe('Admin Reconciliation E2E', () => {
     test('shows "No records found" when filter matches nothing', async ({
       page,
     }) => {
-      const statusSelect = page.locator('#reconciliation-status-filter');
+      const statusSelect = page.getByRole('combobox').first();
       await statusSelect.selectOption('error');
 
       // Narrow date range so no records match
-      await page.locator('#reconciliation-start-date').fill('2099-01-01');
-      await page.locator('#reconciliation-end-date').fill('2099-12-31');
+      const dateInputs = page.locator('input[type="date"]');
+      await dateInputs.nth(0).fill('2099-01-01');
+      await dateInputs.nth(1).fill('2099-12-31');
 
       await expect(
         page.getByText(/No records found matching the filters/i),
@@ -72,7 +73,7 @@ test.describe('Admin Reconciliation E2E', () => {
     test('resets to all records when status filter is changed back', async ({
       page,
     }) => {
-      const statusSelect = page.locator('#reconciliation-status-filter');
+      const statusSelect = page.getByRole('combobox').first();
 
       await statusSelect.selectOption('matched');
       await statusSelect.selectOption('all');
@@ -117,8 +118,8 @@ test.describe('Admin Reconciliation E2E — access control', () => {
     await expect(
       page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
     ).toBeHidden({ timeout: 15_000 });
-    await expect(page.getByText(/Connect Freighter|Launch App/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      page.getByRole('button', { name: /start bridging/i }),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

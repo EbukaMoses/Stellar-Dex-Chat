@@ -110,11 +110,11 @@ export async function mockSorobanRpc(
           jsonrpc: '2.0',
           id,
           result: {
-            results: [{ xdr: 'AAAAAAAAAGQAAAAAAAAAAQ==' }],
+            transactionData: '',
+            results: [{ xdr: MOCK_ADMIN_SCVAL_XDR }],
             cost: { cpuInsns: '0', memBytes: '0' },
             latestLedger: 12_345,
             minResourceFee: '0',
-            retval: MOCK_ADMIN_SCVAL_XDR,
           },
         }),
       });
@@ -219,7 +219,7 @@ export async function gotoAdminReconciliation(page: Page): Promise<void> {
     page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
   ).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('Loading...')).toBeHidden({ timeout: 15_000 });
-  await expect(page.locator('#reconciliation-status-filter')).toBeVisible({
+  await expect(page.getByRole('combobox').first()).toBeVisible({
     timeout: 15_000,
   });
 }
