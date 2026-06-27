@@ -1,13 +1,25 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import {
+  gotoAdminReconciliation,
+  mockSorobanRpc,
+  MOCK_ADMIN_ADDRESS,
+  connectMockWallet,
+} from './helpers';
+
+/** Non-admin wallet address (valid 56-char Stellar key). */
+const NON_ADMIN_ADDRESS =
+  'G9876543210987654321098765432109876543210987654321098765';
 
 test.describe('Admin Reconciliation E2E', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/admin/reconciliation');
+    await gotoAdminReconciliation(page);
   });
 
   test.describe('Page load', () => {
     test('loads the reconciliation dashboard for admin users', async ({ page }) => {
-      const heading = page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i });
+      const heading = page.getByRole('heading', {
+        name: /Admin Reconciliation Dashboard/i,
+      });
       await expect(heading).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(/Export CSV/i)).toBeVisible();
     });
@@ -32,7 +44,6 @@ test.describe('Admin Reconciliation E2E', () => {
   test.describe('Filtering', () => {
     test('filters records by status', async ({ page }) => {
       const statusSelect = page.getByLabel(/Status/i);
-      await page.waitForLoadState('networkidle');
       await statusSelect.selectOption('matched');
 
       const rows = page.locator('tbody tr');
@@ -42,21 +53,25 @@ test.describe('Admin Reconciliation E2E', () => {
       }
     });
 
-    test('shows "No records found" when filter matches nothing', async ({ page }) => {
+    test('shows "No records found" when filter matches nothing', async ({
+      page,
+    }) => {
       const statusSelect = page.getByLabel(/Status/i);
-      await page.waitForLoadState('networkidle');
       await statusSelect.selectOption('error');
 
-      const rows = page.locator('tbody tr');
-      const count = await rows.count();
-      if (count === 0) {
-        await expect(page.getByText(/No records found matching the filters/i)).toBeVisible();
-      }
+      // Narrow date range so no records match
+      await page.getByLabel(/Start Date/i).fill('2099-01-01');
+      await page.getByLabel(/End Date/i).fill('2099-12-31');
+
+      await expect(
+        page.getByText(/No records found matching the filters/i),
+      ).toBeVisible();
     });
 
-    test('resets to all records when status filter is changed back', async ({ page }) => {
+    test('resets to all records when status filter is changed back', async ({
+      page,
+    }) => {
       const statusSelect = page.getByLabel(/Status/i);
-      await page.waitForLoadState('networkidle');
 
       await statusSelect.selectOption('matched');
       await statusSelect.selectOption('all');
@@ -74,9 +89,7 @@ test.describe('Admin Reconciliation E2E', () => {
       await expect(exportBtn).toBeEnabled();
     });
 
-    test('triggers CSV download on click', async ({ page, context }) => {
-      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-
+    test('triggers CSV download on click', async ({ page }) => {
       const downloadPromise = page.waitForEvent('download', { timeout: 10_000 });
       const exportBtn = page.getByRole('button', { name: /Export CSV/i });
       await exportBtn.click();
@@ -86,14 +99,20 @@ test.describe('Admin Reconciliation E2E', () => {
   });
 
   test.describe('Non-admin redirect', () => {
-    test('non-admin users are redirected away from reconciliation page', async ({ page }) => {
-      const landingOrLogin = page.getByText(/launch|connect wallet|get started|landing/i).first();
-      const heading = page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i });
+    test('non-admin users are redirected away from reconciliation page', async ({
+      page,
+    }) => {
+      await mockSorobanRpc(page, { adminAddress: MOCK_ADMIN_ADDRESS });
+      await page.goto('/admin/reconciliation');
+      await page.waitForLoadState('domcontentloaded');
+      await connectMockWallet(page, NON_ADMIN_ADDRESS);
 
-      const isLanding = await landingOrLogin.isVisible({ timeout: 15_000 }).catch(() => false);
-      const isDashboard = await heading.isVisible({ timeout: 5_000 }).catch(() => false);
-
-      expect(isLanding || isDashboard).toBe(true);
+      await expect(
+        page.getByRole('heading', { name: /Admin Reconciliation Dashboard/i }),
+      ).toBeHidden({ timeout: 15_000 });
+      await expect(page.getByText(/Stellar Wave|Connect|Launch/i).first()).toBeVisible({
+        timeout: 15_000,
+      });
     });
   });
 });
