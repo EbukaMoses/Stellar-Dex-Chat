@@ -2090,8 +2090,54 @@ fn test_withdraw_fees_exceeds_accrued() {
 
     bridge.accrue_fee(&token_addr, &50);
 
+    // Amount (100) exceeds available fees (50) — returns FeeWithdrawalExceedsBalance
     let result = bridge.try_withdraw_fees(&Address::generate(&env), &token_addr, &100);
+    assert_eq!(result, Err(Ok(Error::FeeWithdrawalExceedsBalance)));
+}
+
+// ── withdraw_fees edge case validation tests (issue #713) ────────────────
+
+#[test]
+fn test_withdraw_fees_zero_accrued_returns_no_fees_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, _, token_addr, _, _) = setup_bridge(&env, 10_000);
+
+    // No fees accrued at all — must return NoFeesToWithdraw
+    let result = bridge.try_withdraw_fees(&Address::generate(&env), &token_addr, &1);
     assert_eq!(result, Err(Ok(Error::NoFeesToWithdraw)));
+}
+
+#[test]
+fn test_withdraw_fees_exact_balance_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, bridge, _, token_addr, token, token_sac) = setup_bridge(&env, 10_000);
+    let recipient = Address::generate(&env);
+    let user = Address::generate(&env);
+    token_sac.mint(&user, &5_000);
+
+    bridge.deposit(&user, &1_000, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    bridge.accrue_fee(&token_addr, &100);
+
+    // Withdraw exactly the accrued amount — boundary condition must succeed
+    bridge.withdraw_fees(&recipient, &token_addr, &100);
+    assert_eq!(bridge.get_accrued_fees(&token_addr), 0);
+}
+
+#[test]
+fn test_withdraw_fees_zero_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, _, token_addr, _, _) = setup_bridge(&env, 10_000);
+    bridge.accrue_fee(&token_addr, &100);
+
+    // Zero withdrawal amount must return ZeroAmount
+    let result = bridge.try_withdraw_fees(&Address::generate(&env), &token_addr, &0);
+    assert_eq!(result, Err(Ok(Error::ZeroAmount)));
 }
 
 #[test]

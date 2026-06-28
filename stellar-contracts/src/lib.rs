@@ -2406,8 +2406,15 @@ impl FiatBridge {
 
         let key = DataKey::FeeVault(token.clone());
         let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        if amount > current {
+
+        // Edge case: no fees accrued at all
+        if current <= 0 {
             return Err(Error::NoFeesToWithdraw);
+        }
+
+        // Edge case: requested amount exceeds available fee balance
+        if amount > current {
+            return Err(Error::FeeWithdrawalExceedsBalance);
         }
 
         let token_client = token::Client::new(&env, &token);
