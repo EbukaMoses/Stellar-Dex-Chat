@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import AdminGuard from '../AdminGuard';
+import AdminGuard, { stellarAddressSchema } from '../AdminGuard';
 import { useStellarWallet } from '@/contexts/StellarWalletContext';
 import { getAdmin } from '@/lib/stellarContract';
 
@@ -11,6 +11,33 @@ vi.mock('@/components/LandingPage', () => ({
   default: () => <div data-testid="landing-page">Landing Page</div>,
 }));
 
+// ── stellarAddressSchema unit tests ──────────────────────────────────────
+describe('stellarAddressSchema', () => {
+  it('accepts a valid 56-char G-prefixed address', () => {
+    const addr = 'GABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDE';
+    expect(stellarAddressSchema.safeParse(addr).success).toBe(true);
+  });
+
+  it('rejects an address that does not start with G', () => {
+    const addr = 'XABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDE';
+    expect(stellarAddressSchema.safeParse(addr).success).toBe(false);
+  });
+
+  it('rejects an address shorter than 56 characters', () => {
+    expect(stellarAddressSchema.safeParse('GABC').success).toBe(false);
+  });
+
+  it('rejects an address longer than 56 characters', () => {
+    const addr = 'GABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDE1';
+    expect(stellarAddressSchema.safeParse(addr).success).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    expect(stellarAddressSchema.safeParse('').success).toBe(false);
+  });
+});
+
+// ── AdminGuard component tests ───────────────────────────────────────────
 describe('AdminGuard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -91,5 +118,21 @@ describe('AdminGuard', () => {
     );
 
     expect(await screen.findByTestId('landing-page')).toBeInTheDocument();
+  });
+
+  it('shows error message when getAdmin throws', async () => {
+    const validAddr = 'GABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDE';
+    vi.mocked(useStellarWallet).mockReturnValue({
+      connection: { address: validAddr },
+    } as any);
+    vi.mocked(getAdmin).mockRejectedValue(new Error('RPC failure'));
+
+    render(
+      <AdminGuard>
+        <div data-testid="protected-content">Secret content</div>
+      </AdminGuard>
+    );
+
+    expect(await screen.findByText('Failed to verify admin status. Please try again.')).toBeInTheDocument();
   });
 });
