@@ -12,27 +12,9 @@ export type BridgeStats = {
   totalDeposited: bigint | null;
   loading: boolean;
   error: string | null;
-  fetchCount: number;
-  lastFetchedAt: Date | null;
   refetchStats: () => Promise<void>;
   refresh: () => Promise<void>;
 };
-
-// Minimal telemetry sink — swap for a real analytics provider as needed.
-function trackTelemetry(event: string, meta?: Record<string, unknown>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    // Emit a custom DOM event so tests and analytics shims can intercept it
-    // without coupling this hook to a specific vendor SDK.
-    window.dispatchEvent(
-      new CustomEvent('bridge_stats_telemetry', {
-        detail: { event, timestamp: Date.now(), ...meta },
-      }),
-    );
-  } catch {
-    // telemetry must never crash the app
-  }
-}
 
 export default function useBridgeStats(): BridgeStats {
   const [balance, setBalance] = useState<bigint | null>(null);
@@ -40,16 +22,12 @@ export default function useBridgeStats(): BridgeStats {
   const [totalDeposited, setTotalDeposited] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fetchCount, setFetchCount] = useState(0);
-  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
     isMountedRef.current = true;
-    trackTelemetry('bridge_stats_mounted');
     return () => {
       isMountedRef.current = false;
-      trackTelemetry('bridge_stats_unmounted');
     };
   }, []);
 
@@ -57,7 +35,6 @@ export default function useBridgeStats(): BridgeStats {
     if (!isMountedRef.current) return;
     setLoading(true);
     setError(null);
-    const fetchStart = Date.now();
     try {
       const [b, l, t] = await Promise.all([
         getContractBalance(),
@@ -68,30 +45,15 @@ export default function useBridgeStats(): BridgeStats {
       setBalance(b);
       setLimit(l);
       setTotalDeposited(t);
-      const now = new Date();
-      setLastFetchedAt(now);
-      setFetchCount((prev) => prev + 1);
-      trackTelemetry('bridge_stats_fetch_success', {
-        durationMs: Date.now() - fetchStart,
-        balance: b?.toString(),
-        limit: l?.toString(),
-        totalDeposited: t?.toString(),
-      });
     } catch (err) {
       if (!isMountedRef.current) return;
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      trackTelemetry('bridge_stats_fetch_error', {
-        durationMs: Date.now() - fetchStart,
-        error: message,
-      });
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
   }, []);
 
   const refresh = useCallback(async () => {
-    trackTelemetry('bridge_stats_manual_refresh');
     clearCache();
     await refetchStats();
   }, [refetchStats]);
@@ -113,8 +75,6 @@ export default function useBridgeStats(): BridgeStats {
     totalDeposited,
     loading,
     error,
-    fetchCount,
-    lastFetchedAt,
     refetchStats,
     refresh,
   };
