@@ -182,7 +182,7 @@ What would you like to do today? I'm here to make your XLM-to-fiat journey smoot
       stopPolling();
       pollIntervalRef.current = setInterval(async () => {
         const reference =
-          machineRef.current.getState().context.pendingTransactionData?.reference;
+          machineRef.current.getState().context.pendingTransactionData?.transactionId;
         if (!reference) return;
         try {
           const res = await fetch(
