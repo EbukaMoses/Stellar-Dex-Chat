@@ -34,6 +34,10 @@ export default function UserSettings({ isOpen, onClose }: UserSettingsProps) {
     setRemindersEnabled,
     reminderFrequency,
     setReminderFrequency,
+    highValueThreshold,
+    setHighValueThreshold,
+    twoFactorEnabled,
+    setTwoFactorEnabled,
   } = useUserPreferences();
   const { consented: telemetryConsented, setConsent: setTelemetryConsent } = useChatTelemetry();
   const { beneficiaries, isLoaded, addBeneficiary, deleteBeneficiary, renameBeneficiary } = useBeneficiaries();
@@ -585,6 +589,85 @@ export default function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                 );
               })}
             </ul>
+          </section>
+
+          {/* High-Value Transfer Security section */}
+          <section
+            className={`pt-6 border-t ${featureFlagSectionDividerBorderClass(isDarkMode)}`}
+          >
+            <h3
+              className={`text-xs font-semibold uppercase tracking-wider mb-3 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
+              High-Value Transfer Security
+            </h3>
+            <p
+              className={`text-xs mb-4 ${
+                isDarkMode ? 'text-gray-500' : 'text-gray-400'
+              }`}
+            >
+              Configure additional security for large transfers
+            </p>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-sm ${
+                    isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}
+                >
+                  Enable two-factor confirmation
+                </span>
+                <button
+                  onClick={() => setTwoFactorEnabled(!twoFactorEnabled)}
+                  aria-pressed={twoFactorEnabled}
+                  aria-label="Two-factor confirmation"
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
+                    twoFactorEnabled ? 'bg-blue-600' : 'bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                      twoFactorEnabled ? 'translate-x-5.5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {twoFactorEnabled && (
+                <div className="space-y-2">
+                  <label
+                    className={`text-[10px] font-bold uppercase tracking-widest ${
+                      isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                    }`}
+                  >
+                    Threshold (XLM)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={highValueThreshold}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (!isNaN(value) && value > 0) {
+                        setHighValueThreshold(value);
+                      }
+                    }}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border transition-colors ${
+                      isDarkMode
+                        ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
+                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                    }`}
+                    aria-label="High-value transfer threshold in XLM"
+                  />
+                  <p className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    Transfers above this amount will require additional confirmation
+                  </p>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Telemetry section */}
