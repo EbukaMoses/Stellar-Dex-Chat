@@ -1905,22 +1905,6 @@ fn test_get_denied_addresses_safe_iteration() {
     let empty = bridge.get_denied_addresses(&100, &10);
     assert_eq!(empty.len(), 0);
 }
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (_, bridge, admin, token_addr, _, token_sac) = setup_bridge(&env, 10_000);
-    let user = Address::generate(&env);
-    token_sac.mint(&user, &5_000);
-
-    bridge.deposit(&user, &100, &token_addr, &Bytes::new(&env), &0, &0, &None);
-    bridge.migrate_escrow(&10);
-
-    let escrow = bridge.get_escrow_record(&0).unwrap();
-    assert_eq!(escrow.version, 1);
-    assert_eq!(escrow.depositor, user);
-    assert_eq!(escrow.amount, 100);
-    assert!(escrow.migrated);
-}
 
 // ── batch admin operations tests ──────────────────────────────────────────
 #[test]

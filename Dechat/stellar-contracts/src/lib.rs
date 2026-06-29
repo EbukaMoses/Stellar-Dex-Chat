@@ -360,6 +360,20 @@ pub struct SlippageEvent {
 
 #[contractevent]
 #[derive(Clone, Debug)]
+pub struct SlippageThresholdSetEvent {
+    pub version: u32,
+    pub threshold_bps: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
+pub struct TelemetryEvent {
+    pub version: u32,
+    pub function_name: Symbol,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
 pub struct AdminActionQueuedEvent {
     pub version: u32,
     pub action_type: Symbol,
@@ -618,6 +632,10 @@ pub enum DataKey {
     Threshold,
     MultisigProposal(u64),
     NextMultisigID,
+    // ── Issue #496: slippage threshold for batch operations ─────────────
+    SlippageThreshold,
+    // ── Issue #1044: fee recipient address ───────────────────────────
+    FeeRecipient,
 }
 
 const ORACLE_PRICE_DECIMALS: i128 = 10_000_000;
@@ -628,6 +646,11 @@ pub struct FiatBridge;
 
 #[contractimpl]
 impl FiatBridge {
+    // ── Issue #1041: telemetry helper ───────────────────────────────────
+    fn emit_telemetry(env: &Env, function_name: Symbol) {
+        TelemetryEvent { version: EVENT_VERSION, function_name }.publish(env);
+    }
+    
     pub fn init(
         env: Env,
         admin: Address,
@@ -637,6 +660,9 @@ impl FiatBridge {
         signers: Vec<Address>,
         threshold: u32,
     ) -> Result<(), Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "init"));
+        
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -730,6 +756,9 @@ impl FiatBridge {
         max_slippage: u32,
         memo_hash: Option<BytesN<32>>,
     ) -> Result<BytesN<32>, Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "deposit"));
+        
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Self::validate_memo_hash(&env, &memo_hash)?;
         from.require_auth();
@@ -2393,6 +2422,9 @@ impl FiatBridge {
     }
 
     pub fn withdraw_fees(env: Env, to: Address, token: Address, amount: i128) -> Result<(), Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "withdraw_fees"));
+        
         let admin: Address = env
             .storage()
             .instance()
@@ -2417,21 +2449,38 @@ impl FiatBridge {
             return Err(Error::FeeWithdrawalExceedsBalance);
         }
 
+        // ── Issue #1044: use fee_recipient if set, otherwise use the provided 'to' address
+        let recipient = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeRecipient)
+            .unwrap_or(to);
+
         let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&env.current_contract_address(), &to, &amount);
+        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
 
         env.storage().persistent().set(&key, &(current - amount));
-        FeeWithdrawnEvent { version: EVENT_VERSION, to: to.clone(), amount }.publish(&env);
+        FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient, amount }.publish(&env);
         Ok(())
     }
 
     pub fn withdraw_fees_batch(env: Env, to: Address, tokens: Vec<Address>) -> Result<(), Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "withdraw_fees_batch"));
+        
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
+
+        // ── Issue #1044: use fee_recipient if set, otherwise use the provided 'to' address
+        let recipient = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeRecipient)
+            .unwrap_or(to);
 
         let contract = env.current_contract_address();
         for token in tokens.iter() {
@@ -2442,9 +2491,9 @@ impl FiatBridge {
             }
 
             let token_client = token::Client::new(&env, &token);
-            token_client.transfer(&contract, &to, &current);
+            token_client.transfer(&contract, &recipient, &current);
             env.storage().persistent().set(&key, &0i128);
-            FeeWithdrawnEvent { version: EVENT_VERSION, to: to.clone(), amount: current }.publish(&env);
+            FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient.clone(), amount: current }.publish(&env);
         }
 
         Ok(())
@@ -2602,6 +2651,33 @@ impl FiatBridge {
             .get(&DataKey::WithdrawCooldownThreshold)
             .unwrap_or(0)
     }
+    pub fn get_slippage_threshold(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::SlippageThreshold)
+            .unwrap_or(0)
+    }
+    
+    // ── Issue #1044: fee recipient management ───────────────────────────
+    pub fn set_fee_recipient(env: Env, recipient: Address) -> Result<(), Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "set_fee_recipient"));
+        
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        
+        env.storage().instance().set(&DataKey::FeeRecipient, &recipient);
+        Ok(())
+    }
+    
+    pub fn get_fee_recipient(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::FeeRecipient)
+    }
+    
     pub fn get_receipt_by_index(env: Env, idx: u64) -> Option<Receipt> {
         let max_receipts: u64 = env.storage().instance().get(&DataKey::ReceiptCounter).unwrap_or(0);
         if idx >= max_receipts {
@@ -3004,6 +3080,9 @@ impl FiatBridge {
         env: Env,
         operations: Vec<BatchAdminOp>,
     ) -> Result<BatchResult, Error> {
+        // ── Issue #1041: emit telemetry event
+        Self::emit_telemetry(&env, Symbol::new(&env, "execute_batch_admin"));
+        
         let admin: Address = env
             .storage()
             .instance()
@@ -3065,6 +3144,17 @@ impl FiatBridge {
             env.storage()
                 .instance()
                 .set(&DataKey::AntiSandwichDelay, &ledgers);
+            Ok(())
+        } else if *op_name == Symbol::new(env, "set_slippage_threshold") {
+            let threshold_bps = Self::bytes_to_u32(env, &op.payload)?;
+            // Validate slippage threshold is reasonable (0-10000 bps = 0-100%)
+            if threshold_bps > 10000 {
+                return Err(Error::SlippageTooHigh);
+            }
+            env.storage()
+                .instance()
+                .set(&DataKey::SlippageThreshold, &threshold_bps);
+            SlippageThresholdSetEvent { version: EVENT_VERSION, threshold_bps }.publish(env);
             Ok(())
         } else if *op_name == Symbol::new(env, "set_limit") {
             // Payload: [Address(token), i128(limit)]
