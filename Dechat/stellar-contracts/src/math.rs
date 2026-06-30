@@ -58,8 +58,7 @@ pub fn checked_mul_div_floor(a: i128, b: i128, d: i128) -> Result<i128, Error> {
         product / d
     } else {
         product / d - 1
-    };
-    Ok(quotient)
+    })
 }
 
 pub fn mul_div_floor(a: i128, b: i128, d: i128) -> i128 {
@@ -108,8 +107,7 @@ pub fn checked_mul_div_ceil(a: i128, b: i128, d: i128) -> Result<i128, Error> {
         product / d
     } else {
         product / d - 1
-    };
-    Ok(quotient)
+    })
 }
 
 pub fn mul_div_ceil(a: i128, b: i128, d: i128) -> i128 {
