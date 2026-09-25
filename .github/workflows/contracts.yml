@@ -2,12 +2,12 @@ name: Smart Contract CI
 
 on:
   pull_request:
-    branches: [main, add_Soroban_invariant_test]
+    branches: [main]
     paths:
       - "Dechat/stellar-contracts/**"
       - ".github/workflows/contracts.yml"
   push:
-    branches: [main, add_Soroban_invariant_test]
+    branches: [main]
     paths:
       - "Dechat/stellar-contracts/**"
 
@@ -24,8 +24,60 @@ env:
   MAX_WASM_BYTES: "98500"
 
 jobs:
+  fmt:
+    name: Check formatting
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Dechat/stellar-contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: Dechat/stellar-contracts -> target
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Run clippy
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Dechat/stellar-contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: Dechat/stellar-contracts -> target
+
+      - name: Run clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
   test:
-    name: Test & Build
+    name: Run tests
     runs-on: ubuntu-latest
 
     defaults:
@@ -56,22 +108,37 @@ jobs:
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
         with:
           toolchain: stable
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo registry
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            Dechat/stellar-contracts/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Dechat/stellar-contracts/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: Dechat/stellar-contracts -> target
 
       - name: Run tests
         run: cargo test
+
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Dechat/stellar-contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: Dechat/stellar-contracts -> target
 
       - name: Build WASM release
         run: cargo build --target wasm32-unknown-unknown --release
@@ -96,12 +163,6 @@ jobs:
             echo "Error: WASM size $SIZE bytes exceeds ${MAX_WASM_BYTES} byte limit"
             exit 1
           fi
-
-      - name: Run clippy (deny warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
 
   deny:
     name: License & Advisory Check
@@ -141,16 +202,10 @@ jobs:
           toolchain: stable
           targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo registry & shared target dir
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            .wasm-size-target
-          key: ${{ runner.os }}-cargo-wasm-size-${{ hashFiles('head/Dechat/stellar-contracts/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-wasm-size-
+          workspaces: "head/Dechat/stellar-contracts -> .wasm-size-target"
 
       - name: Build head WASM
         working-directory: head/Dechat/stellar-contracts
