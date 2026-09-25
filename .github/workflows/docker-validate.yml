@@ -31,7 +31,7 @@ jobs:
 
       - name: Check for correct paths after Dechat/ move
         run: |
-          if grep -q './dex_with_fiat_frontend' docker-compose.yml; then
+          if grep -qE '\./dex_with_fiat_frontend[^/]' docker-compose.yml; then
             echo "❌ ERROR: docker-compose.yml still references old path ./dex_with_fiat_frontend"
             echo "   Should be: ./Dechat/dex_with_fiat_frontend"
             exit 1
