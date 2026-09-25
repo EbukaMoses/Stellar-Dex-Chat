@@ -6185,3 +6185,6 @@ mod test_set_fee_recipient_invariants;
 #[cfg(test)]
 mod test_set_withdrawal_expiry_invariants;
 
+#[cfg(test)]
+mod test_get_deploy_config_hash_invariants;
+
