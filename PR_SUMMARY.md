@@ -222,6 +222,25 @@ grep -E "NEXT_PUBLIC_STELLAR_CONTRACT_ID|NEXT_PUBLIC_XLM_SAC_ID" docker-compose.
 # ✅ No obsolete variables
 ```
 
+### ⚠️ Note on Test Failures
+
+The CI may show 6 pre-existing test failures in:
+- `src/components/__tests__/CCIPBridgeModal.test.tsx` (5 failures)
+- `src/components/__tests__/SplitViewComparison.clipboard.test.tsx` (1 failure)
+
+**These failures are NOT caused by this PR.** They exist on the main branch and are unrelated to CI/Docker/env configuration changes. The failures involve:
+- Missing aria-labels that tests expect
+- Text content split across multiple elements breaking `getByText` queries
+- Clipboard copy button icon checks
+
+Our changes only modified:
+- Workflow files (`.github/workflows/`)
+- Environment files (`.env.*`)
+- Docker config (`docker-compose.yml`)
+- Documentation (README, env examples)
+
+None of these affect the CCIPBridgeModal or SplitViewComparison components.
+
 ---
 
 ## 📋 Migration Checklist for Maintainers
