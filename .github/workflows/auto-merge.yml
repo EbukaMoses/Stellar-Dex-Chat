@@ -149,7 +149,6 @@ on:
   workflow_run:
     workflows:
       - "Frontend CI"
-      - "Frontend Build Check"
       - "Smart Contract CI"
       - "Contract Tests"
     types: [completed]

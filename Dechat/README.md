@@ -146,7 +146,7 @@ git clone https://github.com/leojay-net/DEX-CHAT.git
 cd DEX-CHAT
 
 # 2. Copy the Docker environment file
-cp .env.docker dex_with_fiat_frontend/.env.local
+cp .env.docker Dechat/dex_with_fiat_frontend/.env.local
 
 # 3. Start the full stack
 docker compose up
