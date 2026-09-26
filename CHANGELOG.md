@@ -1164,6 +1164,9 @@ Repo Avatar
 - **contract:** Consolidate nonce sites, fix fee-withdrawal nonce bug, remove view-function events and telemetry
 - **changelog:** Update changelog [skip ci]
 - **contract:** Admin/denylist helpers, shared withdraw-queue helpers, extend ConfigSnapshot, repo cleanup
+- **changelog:** Update changelog [skip ci]
+- **contract:** Fix UPGRADE_RUNBOOK and VERSION_MIGRATION drift from API
+- **contract:** Trim rustdoc to reduce embedded contract spec size
 
 ### Deprecated
 
