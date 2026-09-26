@@ -3,6 +3,8 @@
 import SkeletonChat from '@/components/ui/skeleton/SkeletonChat';
 import SkeletonSidebar from '@/components/ui/skeleton/SkeletonSidebar';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   Wallet,
   LogOut,
@@ -85,14 +87,12 @@ function StellarChatInterfaceContent() {
   const [defaultAmount, setDefaultAmount] = useState('');
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [bankDetailsXlmAmount, setBankDetailsXlmAmount] = useState(0);
-  const [isMobile, setIsMobile] = useState(false);
   const [isSheetMounted, setIsSheetMounted] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
-  const [isOnline, setIsOnline] = useState(
-    typeof window !== 'undefined' ? window.navigator.onLine : true,
-  );
+  const { isOnline, wasOffline, resetWasOffline } = useOnlineStatus();
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
   // ── Health badge state ──────────────────────────────────────────────────────
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('checking');
@@ -159,23 +159,14 @@ function StellarChatInterfaceContent() {
     error: statsError,
   } = useBridgeStats();
 
-  // Track viewport width to switch between sidebar and drawer
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 640);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   useEffect(() => {
     setIsHydrated(true);
   }, []);
 
+  // Handle reconnection notice and queue processing when coming back online
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleOnline = () => {
-      setIsOnline(true);
+    if (wasOffline && isOnline) {
       setShowReconnectedNotice(true);
       if (reconnectNoticeTimerRef.current) {
         clearTimeout(reconnectNoticeTimerRef.current);
@@ -184,31 +175,16 @@ function StellarChatInterfaceContent() {
         setShowReconnectedNotice(false);
       }, 3000);
       void processQueue();
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setShowReconnectedNotice(false);
-      if (reconnectNoticeTimerRef.current) {
-        clearTimeout(reconnectNoticeTimerRef.current);
-        reconnectNoticeTimerRef.current = null;
-      }
-    };
+      resetWasOffline();
+    }
+  }, [wasOffline, isOnline, resetWasOffline]);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
+  // Subscribe to queue updates
+  useEffect(() => {
     const unsubscribe = subscribeToQueue((count) => {
       setQueuedReadables(count);
     });
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      if (reconnectNoticeTimerRef.current) {
-        clearTimeout(reconnectNoticeTimerRef.current);
-      }
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   // Global shortcut: Cmd/Ctrl+K toggles ChatSearchPanel from anywhere
