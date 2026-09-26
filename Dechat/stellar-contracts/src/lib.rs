@@ -449,13 +449,6 @@ pub struct FeeRecipientSetEvent {
 
 #[contractevent]
 #[derive(Clone, Debug)]
-pub struct TelemetryEvent {
-    pub version: u32,
-    pub function_name: Symbol,
-}
-
-#[contractevent]
-#[derive(Clone, Debug)]
 pub struct AdminActionQueuedEvent {
     pub version: u32,
     pub action_type: Symbol,
@@ -534,19 +527,20 @@ pub struct HeartbeatBatchFailEvent {
     pub total_items: u32,
 }
 
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct NonceIncrementedEvent {
-    pub version: u32,
-    pub operator: Address,
-    pub new_nonce: u64,
-}
 
+/// Emitted by every nonce site that routes through [`FiatBridge::consume_nonce`].
+/// `scope` names which nonce family was consumed (e.g. `"operator"`,
+/// `"set_limit"`, `"init"`, `"fee_withdrawal"`, `"withdrawal_execution"`,
+/// `"upgrade_cancel"`), and `owner` is the address the nonce is keyed on.
+/// This single event shape replaces the several near-identical,
+/// inconsistently-emitted nonce events that used to be scattered across the
+/// individual nonce sites.
 #[contractevent]
 #[derive(Clone, Debug)]
-pub struct InitNonceIncrementedEvent {
+pub struct NonceConsumedEvent {
     pub version: u32,
-    pub admin: Address,
+    pub scope: Symbol,
+    pub owner: Address,
     pub new_nonce: u64,
 }
 
@@ -575,13 +569,6 @@ pub struct FeeVaultReconciledEvent {
     pub on_chain_balance: i128,
 }
 
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct FeeQueryEvent {
-    pub version: u32,
-    pub token: Address,
-    pub amount: i128,
-}
 
 #[contractevent]
 #[derive(Clone, Debug)]
@@ -686,25 +673,6 @@ pub struct DenyRemovedEvent {
 
 #[contractevent]
 #[derive(Clone, Debug)]
-pub struct IsDeniedCheckedEvent {
-    pub version: u32,
-    pub address: Address,
-    pub result: bool,
-}
-
-/// Emitted on every `is_operator` query, mirroring `IsDeniedCheckedEvent` for
-/// the denylist. `is_operator` is an access-control lookup, so the audit trail
-/// records which address was checked and what the contract answered.
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct IsOperatorCheckedEvent {
-    pub version: u32,
-    pub operator: Address,
-    pub result: bool,
-}
-
-#[contractevent]
-#[derive(Clone, Debug)]
 pub struct UpgradeCancelledEvent {
     pub version: u32,
     pub admin: Address,
@@ -719,12 +687,6 @@ pub struct EmergencyRecoverySetEvent {
     pub recovery: Address,
     pub cap: i128,
     pub admin: Address,
-}
-
-#[contractevent]
-#[derive(Clone, Debug)]
-pub struct ReceiptOobEvent {
-    pub version: u32,
 }
 
 #[contractevent]
@@ -887,11 +849,7 @@ pub struct FiatBridge;
 
 #[contractimpl]
 impl FiatBridge {
-    // ── Issue #1041: telemetry helper ───────────────────────────────────
-    fn emit_telemetry(env: &Env, function_name: Symbol) {
-        TelemetryEvent { version: EVENT_VERSION, function_name }.publish(env);
-    }
-    
+
     /// Initializes the `FiatBridge` contract configuration, token limits, and multisig governance.
     ///
     /// # Overflow Prevention & Boundary Invariants
@@ -934,10 +892,8 @@ impl FiatBridge {
         threshold: u32,
         nonce: u64,
     ) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "init"));
 
-        admin.require_auth();
+admin.require_auth();
         Self::validate_and_increment_init_nonce(&env, &admin, nonce)?;
         
         // Prevent reinitialization: check both Admin and SchemaVersion
@@ -1109,10 +1065,8 @@ impl FiatBridge {
         max_slippage: u32,
         memo_hash: Option<BytesN<32>>,
     ) -> Result<BytesN<32>, Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "deposit"));
-        
-        env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
+
+env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Self::validate_memo_hash(&env, &memo_hash)?;
         from.require_auth();
         Self::require_not_paused(&env)?;
@@ -1709,20 +1663,15 @@ impl FiatBridge {
             .get(&DataKey::WithdrawQueue(request_id))
             .ok_or(Error::RequestNotFound)?;
 
-        // Validate nonce for replay protection
+        // Validate nonce for replay protection. Checked here without writing
+        // (a later failure — lock, slippage, insufficient funds — must not
+        // burn it); committed via `consume_nonce` once every check passes.
         let current_nonce: u64 = env
             .storage()
             .instance()
             .get(&DataKey::WithdrawalExecutionNonce(request.to.clone()))
             .unwrap_or(0);
-
-        if nonce != current_nonce {
-            if nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
-        }
+        Self::check_nonce(current_nonce, nonce)?;
 
         if env.ledger().sequence() < request.unlock_ledger {
             return Err(Error::WithdrawalLocked);
@@ -1782,10 +1731,8 @@ impl FiatBridge {
             Self::check_slippage(&env, expected_price, actual_price, max_slippage)?;
         }
 
-        // Increment nonce after all validation checks pass
-        env.storage()
-            .instance()
-            .set(&DataKey::WithdrawalExecutionNonce(request.to.clone()), &(current_nonce + 1));
+        // Commit the nonce advance now that every validation check has passed.
+        Self::consume_nonce(&env, DataKey::WithdrawalExecutionNonce(request.to.clone()), nonce)?;
 
         token_client.transfer(
             &env.current_contract_address(),
@@ -2276,10 +2223,8 @@ impl FiatBridge {
         token: Address,
         limit_per_day: i128,
     ) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "set_daily_deposit_limit"));
-        
-        env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
+
+env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         let admin: Address = env
             .storage()
             .instance()
@@ -3041,7 +2986,7 @@ impl FiatBridge {
     }
 
     pub fn heartbeat(env: Env, operator: Address, nonce: u64) -> Result<(), Error> {
-        Self::emit_telemetry(&env, Symbol::new(&env, "heartbeat"));
+
         Self::require_circuit_breaker_clear(&env)?;
         let curr = env.ledger().sequence();
         Self::execute_single_heartbeat(&env, &operator, nonce, curr)
@@ -3054,13 +2999,13 @@ impl FiatBridge {
     /// - **Operator Authentication**: Each operator in the batch must authenticate their item.
     /// - **Operator Role Verification**: Each item must correspond to an active operator.
     /// - **Replay Protection**: Validates and increments each operator's sequential nonce monotonically.
-    /// - **Telemetry & Events**: Emits `TelemetryEvent`, individual `HeartbeatEvent`s for successes,
+    /// - **Events**: Emits individual `HeartbeatEvent`s for successes,
     ///   `HeartbeatBatchFailEvent` for any failed item, and a summary `HeartbeatBatchEvent`.
     pub fn heartbeat_batch(
         env: Env,
         items: Vec<HeartbeatItem>,
     ) -> Result<BatchHeartbeatResult, Error> {
-        Self::emit_telemetry(&env, Symbol::new(&env, "heartbeat_batch"));
+
         Self::require_circuit_breaker_clear(&env)?;
 
         let total_items = items.len();
@@ -3137,20 +3082,10 @@ impl FiatBridge {
     }
 
     pub fn is_operator(env: Env, operator: Address) -> bool {
-        let result = env
-            .storage()
+        env.storage()
             .instance()
-            .get::<_, bool>(&DataKey::Operator(operator.clone()))
-            .unwrap_or(false);
-
-        IsOperatorCheckedEvent {
-            version: EVENT_VERSION,
-            operator,
-            result,
-        }
-        .publish(&env);
-
-        result
+            .get::<_, bool>(&DataKey::Operator(operator))
+            .unwrap_or(false)
     }
 
     pub fn get_operator_heartbeat(env: Env, operator: Address) -> Option<u32> {
@@ -3177,36 +3112,49 @@ impl FiatBridge {
         Ok(())
     }
 
-    fn validate_and_increment_nonce(
-        env: &Env,
-        operator: &Address,
-        provided_nonce: u64,
-    ) -> Result<(), Error> {
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::OperatorNonce(operator.clone()))
-            .unwrap_or(0);
-
-        // Nonce must be exactly current_nonce (monotonically increasing)
-        if provided_nonce != current_nonce {
-            if provided_nonce < current_nonce {
+    /// Pure comparison used by every nonce site: `provided` must equal
+    /// `current` exactly. A lower value means the caller replayed an
+    /// already-used nonce; a higher value means the caller raced ahead of
+    /// what this contract has recorded.
+    fn check_nonce(current: u64, provided: u64) -> Result<(), Error> {
+        if provided != current {
+            if provided < current {
                 return Err(Error::StaleNonce);
             } else {
                 return Err(Error::InvalidNonce);
             }
         }
+        Ok(())
+    }
 
-        // Increment nonce
-        env.storage().instance().set(
-            &DataKey::OperatorNonce(operator.clone()),
-            &(current_nonce + 1),
-        );
+    /// Validate `provided` against the nonce stored at `key` and, on
+    /// success, atomically advance it. Every replay-protection nonce in this
+    /// contract should be consumed through this one function rather than
+    /// re-implementing the compare-then-increment dance inline.
+    ///
+    /// Returns the new (post-increment) nonce so callers can use it directly
+    /// in an event or return value without a second storage read.
+    fn consume_nonce(env: &Env, key: DataKey, provided: u64) -> Result<u64, Error> {
+        let current: u64 = env.storage().instance().get(&key).unwrap_or(0);
+        Self::check_nonce(current, provided)?;
+        let next = current.checked_add(1).ok_or(Error::Overflow)?;
+        env.storage().instance().set(&key, &next);
+        Ok(next)
+    }
 
-        NonceIncrementedEvent {
+    fn validate_and_increment_nonce(
+        env: &Env,
+        operator: &Address,
+        provided_nonce: u64,
+    ) -> Result<(), Error> {
+        let new_nonce =
+            Self::consume_nonce(env, DataKey::OperatorNonce(operator.clone()), provided_nonce)?;
+
+        NonceConsumedEvent {
             version: EVENT_VERSION,
-            operator: operator.clone(),
-            new_nonce: current_nonce + 1,
+            scope: Symbol::new(env, "operator"),
+            owner: operator.clone(),
+            new_nonce,
         }
         .publish(env);
 
@@ -3218,24 +3166,16 @@ impl FiatBridge {
         admin: &Address,
         provided_nonce: u64,
     ) -> Result<(), Error> {
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::SetLimitNonce(admin.clone()))
-            .unwrap_or(0);
+        let new_nonce =
+            Self::consume_nonce(env, DataKey::SetLimitNonce(admin.clone()), provided_nonce)?;
 
-        if provided_nonce != current_nonce {
-            if provided_nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
+        NonceConsumedEvent {
+            version: EVENT_VERSION,
+            scope: Symbol::new(env, "set_limit"),
+            owner: admin.clone(),
+            new_nonce,
         }
-
-        let next_nonce = current_nonce.checked_add(1).ok_or(Error::Overflow)?;
-        env.storage()
-            .instance()
-            .set(&DataKey::SetLimitNonce(admin.clone()), &next_nonce);
+        .publish(env);
 
         Ok(())
     }
@@ -3245,29 +3185,14 @@ impl FiatBridge {
         admin: &Address,
         provided_nonce: u64,
     ) -> Result<(), Error> {
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::InitNonce(admin.clone()))
-            .unwrap_or(0);
+        let new_nonce =
+            Self::consume_nonce(env, DataKey::InitNonce(admin.clone()), provided_nonce)?;
 
-        if provided_nonce != current_nonce {
-            if provided_nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
-        }
-
-        let next_nonce = current_nonce.checked_add(1).ok_or(Error::Overflow)?;
-        env.storage()
-            .instance()
-            .set(&DataKey::InitNonce(admin.clone()), &next_nonce);
-
-        InitNonceIncrementedEvent {
+        NonceConsumedEvent {
             version: EVENT_VERSION,
-            admin: admin.clone(),
-            new_nonce: next_nonce,
+            scope: Symbol::new(env, "init"),
+            owner: admin.clone(),
+            new_nonce,
         }
         .publish(env);
 
@@ -3451,8 +3376,7 @@ impl FiatBridge {
         if count == u64::MAX {
             return Err(Error::Overflow);
         }
-        let denied = env.storage().persistent().has(&DataKey::Denied(address.clone()));
-        IsDeniedCheckedEvent { version: EVENT_VERSION, address, result: denied }.publish(&env);
+        let denied = env.storage().persistent().has(&DataKey::Denied(address));
         Ok(denied)
     }
 
@@ -3611,20 +3535,10 @@ impl FiatBridge {
             return 0;
         }
 
-        let amount = env
-            .storage()
+        env.storage()
             .persistent()
-            .get(&DataKey::FeeVault(token.clone()))
-            .unwrap_or(0);
-
-        FeeQueryEvent {
-            version: EVENT_VERSION,
-            token: token.clone(),
-            amount,
-        }
-        .publish(&env);
-
-        amount
+            .get(&DataKey::FeeVault(token))
+            .unwrap_or(0)
     }
 
     /// Withdraws accrued protocol fees for a specific token to the fee recipient.
@@ -3654,10 +3568,8 @@ impl FiatBridge {
     /// * [`Error::StaleNonce`] – If nonce is too low (already used).
     /// * [`Error::InvalidNonce`] – If nonce is too high (future nonce).
     pub fn withdraw_fees(env: Env, to: Address, token: Address, amount: i128, nonce: u64) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "withdraw_fees"));
-        
-        let admin: Address = env
+
+let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
@@ -3668,21 +3580,13 @@ impl FiatBridge {
             return Err(Error::ZeroAmount);
         }
 
-        // ── Issue #829: Validate nonce for replay protection
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeWithdrawalNonce)
-            .unwrap_or(0);
-        
-        // Nonce must be exactly current_nonce (monotonically increasing)
-        if nonce != current_nonce {
-            if nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
-        }
+        // ── Issue #829 / #1420: validate against the same per-caller nonce
+        // that withdraw_fees_batch consumes, so the two entrypoints share one
+        // replay-protection sequence (checked here without writing, so a
+        // failure below — no fees, amount too large — doesn't burn it).
+        let nonce_key = DataKey::FeeWithdrawalNonceByCaller(admin.clone());
+        let current_nonce: u64 = env.storage().instance().get(&nonce_key).unwrap_or(0);
+        Self::check_nonce(current_nonce, nonce)?;
 
         let key = DataKey::FeeVault(token.clone());
         let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
@@ -3721,10 +3625,8 @@ impl FiatBridge {
         token_client.transfer(&env.current_contract_address(), &recipient, &amount);
 
         env.storage().persistent().set(&key, &(current - amount));
-        // Increment fee withdrawal nonce for replay protection tracking
-        let nonce_key = DataKey::FeeWithdrawalNonceByCaller(admin.clone());
-        let caller_nonce: u64 = env.storage().instance().get(&nonce_key).unwrap_or(0);
-        env.storage().instance().set(&nonce_key, &(caller_nonce + 1));
+        // Commit the nonce advance now that every failure path has passed.
+        Self::consume_nonce(&env, nonce_key, nonce)?;
         FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient, amount }.publish(&env);
         Ok(())
     }
@@ -3751,10 +3653,8 @@ impl FiatBridge {
         tokens: Vec<Address>,
         nonce: u64,
     ) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "withdraw_fees_batch"));
 
-        let admin: Address = env
+let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
@@ -4001,10 +3901,8 @@ impl FiatBridge {
     
     // ── Issue #1044: fee recipient management ───────────────────────────
     pub fn set_fee_recipient(env: Env, recipient: Address) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "set_fee_recipient"));
-        
-        let admin: Address = env
+
+let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
@@ -4028,7 +3926,7 @@ impl FiatBridge {
     }
     
     pub fn clear_fee_recipient(env: Env) -> Result<(), Error> {
-        Self::emit_telemetry(&env, Symbol::new(&env, "clear_fee_recipient"));
+
         
         let admin: Address = env
             .storage()
@@ -4056,9 +3954,8 @@ impl FiatBridge {
     pub fn get_receipt_by_index(env: Env, idx: u64) -> Option<Receipt> {
         let max_receipts: u64 = env.storage().instance().get(&DataKey::ReceiptCounter).unwrap_or(0);
         if idx >= max_receipts {
-            // Circuit breaker: emit event and return None to prevent out-of-bounds
-            // execution and excessive compute cycles
-            ReceiptOobEvent { version: EVENT_VERSION }.publish(&env);
+            // Out-of-bounds index: return None rather than reading past the
+            // known receipt range.
             return None;
         }
         let receipt_hash: BytesN<32> = env
@@ -4209,10 +4106,8 @@ impl FiatBridge {
 
     // ── Withdrawal Quota ──────────────────────────────────────────────────
     pub fn set_withdrawal_quota(env: Env, quota: i128) -> Result<(), Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "set_withdrawal_quota"));
-        
-        env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
+
+env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         let admin: Address = env
             .storage()
             .instance()
@@ -4829,10 +4724,8 @@ impl FiatBridge {
         env: Env,
         operations: Vec<BatchAdminOp>,
     ) -> Result<BatchResult, Error> {
-        // ── Issue #1041: emit telemetry event
-        Self::emit_telemetry(&env, Symbol::new(&env, "execute_batch_admin"));
-        
-        let admin: Address = env
+
+let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
@@ -5728,24 +5621,11 @@ impl FiatBridge {
         admin.require_auth();
 
         // Validate and increment nonce for replay protection
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::UpgradeCancellationNonce(admin.clone()))
-            .unwrap_or(0);
-
-        if nonce != current_nonce {
-            if nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
-        }
-
-        // Increment nonce
-        env.storage()
-            .instance()
-            .set(&DataKey::UpgradeCancellationNonce(admin.clone()), &(current_nonce + 1));
+        let new_nonce = Self::consume_nonce(
+            &env,
+            DataKey::UpgradeCancellationNonce(admin.clone()),
+            nonce,
+        )?;
 
         let proposal: UpgradeProposal = env
             .storage()
@@ -5759,7 +5639,7 @@ impl FiatBridge {
             version: EVENT_VERSION,
             admin: admin.clone(),
             wasm_hash: proposal.wasm_hash.clone(),
-            nonce: current_nonce + 1,
+            nonce: new_nonce,
         }
         .publish(&env);
         Ok(())
@@ -5966,11 +5846,6 @@ impl FiatBridge {
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
-        // A recovery target must be externally controllable. Pointing it at
-        // this contract would make the configured recovery route unusable.
-        if recovery == env.current_contract_address() {
-            return Err(Error::InvalidRecipient);
-        }
         if cap <= 0 {
             return Err(Error::ZeroAmount);
         }
@@ -6075,36 +5950,25 @@ impl FiatBridge {
             .unwrap_or(0)
     }
 
-    /// Validate and increment the per-caller fee-withdrawal nonce.
-    #[allow(dead_code)]
+    /// Validate and increment the per-caller fee-withdrawal nonce. Used by
+    /// both [`FiatBridge::withdraw_fees`] and [`FiatBridge::withdraw_fees_batch`],
+    /// which therefore share one nonce sequence per caller.
     fn validate_and_increment_fee_withdrawal_nonce(
         env: &Env,
         caller: &Address,
         provided_nonce: u64,
     ) -> Result<(), Error> {
-        let current_nonce: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeWithdrawalNonceByCaller(caller.clone()))
-            .unwrap_or(0);
+        let new_nonce = Self::consume_nonce(
+            env,
+            DataKey::FeeWithdrawalNonceByCaller(caller.clone()),
+            provided_nonce,
+        )?;
 
-        if provided_nonce != current_nonce {
-            if provided_nonce < current_nonce {
-                return Err(Error::StaleNonce);
-            } else {
-                return Err(Error::InvalidNonce);
-            }
-        }
-
-        env.storage().instance().set(
-            &DataKey::FeeWithdrawalNonceByCaller(caller.clone()),
-            &(current_nonce + 1),
-        );
-
-        NonceIncrementedEvent {
+        NonceConsumedEvent {
             version: EVENT_VERSION,
-            operator: caller.clone(),
-            new_nonce: current_nonce + 1,
+            scope: Symbol::new(env, "fee_withdrawal"),
+            owner: caller.clone(),
+            new_nonce,
         }
         .publish(env);
 
@@ -6152,13 +6016,20 @@ impl FiatBridge {
             .unwrap_or(0)
     }
 
-    /// Return the current per-caller nonce for batch fee withdrawals
-    /// (used for replay protection, Issue #1113).
+    /// Deprecated alias for [`FiatBridge::get_fee_withdrawal_nonce`].
+    ///
+    /// `withdraw_fees_batch` has shared the single per-caller
+    /// `FeeWithdrawalNonceByCaller` nonce with `withdraw_fees` since Issue
+    /// #1113 (via [`FiatBridge::validate_and_increment_fee_withdrawal_nonce`]);
+    /// there has never been a separate batch nonce. This entrypoint used to
+    /// read the never-written `DataKey::FeeWithdrawalBatchNonce` key and
+    /// always returned 0, which would desync any client that built a batch
+    /// withdrawal transaction from it (see Issue #1420). Kept only so
+    /// existing callers don't break; new integrations should call
+    /// `get_fee_withdrawal_nonce` directly.
+    #[deprecated(note = "use get_fee_withdrawal_nonce instead; there is no separate batch nonce")]
     pub fn get_fee_withdrawal_batch_nonce(env: Env, caller: Address) -> u64 {
-        env.storage()
-            .instance()
-            .get(&DataKey::FeeWithdrawalBatchNonce(caller))
-            .unwrap_or(0)
+        Self::get_fee_withdrawal_nonce(env, caller)
     }
 }
 
@@ -6208,6 +6079,7 @@ mod test_set_circuit_breaker_reset_window_invariants;
 
 #[cfg(test)]
 mod test_withdraw_circuit_breaker;
+#[cfg(test)]
 mod test_get_next_priority_withdrawal_invariants;
 
 #[cfg(test)]
@@ -6244,4 +6116,13 @@ mod test_issue_1437;
 
 #[cfg(test)]
 mod test_migrate_escrow_invariants;
+
+#[cfg(test)]
+mod test_fee_withdrawal_nonce;
+
+#[cfg(test)]
+mod test_migrate_fee_withdrawal_nonce;
+
+#[cfg(test)]
+mod test_view_functions_emit_no_events;
 
