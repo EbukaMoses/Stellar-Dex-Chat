@@ -785,6 +785,9 @@ pub enum DataKey {
     TokenAllowlistCount,
     TokenAllowlistEnabledIndex(u64),
     TokenAllowlistEnabledCount,
+    /// Slot in `TokenAllowlistEnabledIndex` holding this token's entry, so a
+    /// toggle updates the entry in place instead of appending (Issue #1406).
+    TokenAllowlistEnabledSlot(Address),
     UserDailyWithdrawal(Address),
     EscrowStorageVersion,
     EscrowRecord(u64),
@@ -1037,7 +1040,9 @@ admin.require_auth();
     /// # Overflow Prevention & Safety Invariants
     /// - **Amount Guard**: Ensures `amount > 0` and within token limits to avoid zero/negative math bugs.
     /// - **Saturating Cooldown Offsets**: Uses [`u32::saturating_add`] on `last.saturating_add(cooldown)`
-    ///   to safely evaluate anti-sandwich and deposit rate delays without ledger wraparound panics.
+    ///   to evaluate the per-depositor `CooldownLedgers` window without ledger wraparound panics.
+    ///   `deposit` does not enforce the anti-sandwich delay; it only records `LastDeposit`, which
+    ///   [`execute_withdrawal`](FiatBridge::execute_withdrawal) later checks.
     /// - **Checked Vault Accumulation**: Increases `config.total_deposited` via
     ///   [`i128::checked_add(amount)`](https://doc.rust-lang.org/std/primitive.i128.html#method.checked_add),
     ///   returning [`Error::Overflow`] if total deposits exceed `i128::MAX`.
@@ -1460,9 +1465,12 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// # Overflow Prevention & Safety Invariants
     /// - **Checked Liabilities Addition**: Adds `amount` to `config.total_liabilities` using
     ///   [`i128::checked_add`], returning [`Error::Overflow`] on overflow.
-    /// - **Saturating TTL Calculations**: Computes receipt and queue item TTL extensions using
+    /// - **Saturating TTL Calculations**: Computes the receipt TTL extension using
     ///   [`u32::saturating_add`] on `MIN_TTL + lock_period + cooldown_ledgers`.
-    /// - **Monotonic Request ID**: Increments `NextRequestID` (`u64`) with checked addition.
+    /// - **Plain Unlock/ID Arithmetic**: `unlock_ledger = sequence + lock_period` and the
+    ///   `NextRequestID` bump (`request_id + 1`) use plain `+`, not saturating or checked addition.
+    ///   The release profile sets `overflow-checks = true`, so an overflow traps and aborts the
+    ///   transaction instead of wrapping; it never returns [`Error::Overflow`].
     /// - **Cooldown Verification**: Verifies large deposit cooldown via saturating ledger sequence addition.
     ///
     /// # Arguments
@@ -1981,7 +1989,21 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             .instance()
             .set(&DataKey::TokenAllowlistEnabled(token.clone()), &enabled);
 
-        // Append to token allowlist enabled index for enumeration
+        let entry = TokenAllowlistEnabledEntry {
+            token: token.clone(),
+            enabled,
+        };
+
+        // Issue #1406: keep one index entry per token. A token seen before is
+        // updated in its existing slot; only a new token appends a slot.
+        let slot_key = DataKey::TokenAllowlistEnabledSlot(token.clone());
+        if let Some(slot) = env.storage().persistent().get::<_, u64>(&slot_key) {
+            env.storage()
+                .persistent()
+                .set(&DataKey::TokenAllowlistEnabledIndex(slot), &entry);
+            return Ok(());
+        }
+
         let count: u64 = env
             .storage()
             .instance()
@@ -1990,13 +2012,10 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         if count == u64::MAX {
             return Err(Error::Overflow);
         }
-        let entry = TokenAllowlistEnabledEntry {
-            token: token.clone(),
-            enabled,
-        };
         env.storage()
             .persistent()
             .set(&DataKey::TokenAllowlistEnabledIndex(count), &entry);
+        env.storage().persistent().set(&slot_key, &count);
         env.storage()
             .instance()
             .set(&DataKey::TokenAllowlistEnabledCount, &(count.checked_add(1).ok_or(Error::Overflow)?));
@@ -2006,9 +2025,13 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     pub fn add_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .set(&DataKey::TokenAllowed(token.clone(), address.clone()), &true);
+        let allowed_key = DataKey::TokenAllowed(token.clone(), address.clone());
+        // Issue #1406: re-adding a listed pair is a no-op, so the enumeration
+        // index never holds duplicate live entries.
+        if env.storage().persistent().has(&allowed_key) {
+            return Ok(());
+        }
+        env.storage().persistent().set(&allowed_key, &true);
 
         // Append to token allowlist index for enumeration
         let count: u64 = env
@@ -2035,9 +2058,12 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     pub fn remove_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::TokenAllowed(token.clone(), address.clone()));
+        let allowed_key = DataKey::TokenAllowed(token.clone(), address.clone());
+        // Nothing to remove, so skip the index scan.
+        if !env.storage().persistent().has(&allowed_key) {
+            return Ok(());
+        }
+        env.storage().persistent().remove(&allowed_key);
 
         // Tombstone the index slot (mark as removed) without compacting
         let count: u64 = env
@@ -2170,8 +2196,16 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
-    /// Set the anti-sandwich delay in ledgers for deposit operations.
-    /// Use 0 to disable. Requires admin.
+    /// Set the anti-sandwich delay in ledgers. Use 0 to disable. Requires admin.
+    ///
+    /// The delay is enforced by [`execute_withdrawal`](FiatBridge::execute_withdrawal), not by
+    /// `deposit`: executing a withdrawal for a recipient whose last deposit was less than
+    /// `ledgers` ago returns [`Error::AntiSandwichDelayActive`]. `deposit` only enforces
+    /// `CooldownLedgers` (returning [`Error::CooldownActive`]) and records the deposit ledger
+    /// that the anti-sandwich check reads.
+    ///
+    /// # Errors
+    /// * [`Error::InvalidAmount`] – If `ledgers == u32::MAX`.
     pub fn set_anti_sandwich_delay(env: Env, ledgers: u32) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         
@@ -2643,14 +2677,19 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * `env` – The Soroban host environment.
     /// * `address` – Target address to deny.
     ///
+    /// Denying an address that is already denied is a no-op: no index entry is
+    /// appended and no event is emitted (Issue #1405).
+    ///
     /// # Errors
     /// * [`Error::MaxDeniedReached`] – If denylist capacity reaches `u64::MAX`.
     /// * [`Error::Overflow`] – If counter increment overflows `u64`.
     pub fn deny_address(env: Env, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Denied(address.clone()), &true);
+        let denied_key = DataKey::Denied(address.clone());
+        if env.storage().persistent().has(&denied_key) {
+            return Ok(());
+        }
+        env.storage().persistent().set(&denied_key, &true);
 
         // Append to denied-address index for enumeration
         let count: u64 = env
@@ -2995,11 +3034,15 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
+    /// Removes an address from the denylist and tombstones its index slot.
+    /// Removing an address that is not denied is a no-op and emits no event.
     pub fn remove_denied_address(env: Env, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::Denied(address.clone()));
+        let denied_key = DataKey::Denied(address.clone());
+        if !env.storage().persistent().has(&denied_key) {
+            return Ok(());
+        }
+        env.storage().persistent().remove(&denied_key);
 
         // Tombstone the index slot (mark as None) without compacting
         let count: u64 = env
@@ -3029,8 +3072,10 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// Checks if an address is on the denylist.
     ///
     /// Returns `true` if the address has been denied via [`deny_address`],
-    /// `false` otherwise. Denied addresses cannot deposit, withdraw,
-    /// request withdrawals, or read user-specific contract state.
+    /// `false` otherwise. A denied address cannot `deposit`, and cannot be the
+    /// `to` recipient of `withdraw` or `request_withdrawal`. View functions do
+    /// not consult the denylist, so a denied address can still read contract
+    /// state.
     ///
     /// # Arguments
     /// * `env` - The contract environment
@@ -3139,12 +3184,13 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     ///
     /// # Overflow Prevention & Safety Invariants
     /// - **Amount Validation**: Ensures `amount > 0` to prevent zero/negative fee accrual.
-    /// - **Bounded Growth**: Fee vault balance is bounded by the contract's actual token holdings,
-    ///   preventing unbounded ledger growth that could overflow.
-    /// - **Unchecked Addition**: Uses unchecked addition since `amount` is validated positive and
-    ///   the vault balance is bounded by contract token balance (reconciliation occurs before withdrawals).
-    /// - **Reconciliation Safety**: Before any withdrawal, `reconcile_fee_vault` corrects the ledger
-    ///   if it exceeds the actual contract balance, preventing overflow in subsequent operations.
+    /// - **Unbounded Ledger**: `accrue_fee` does not compare the fee vault against the contract's
+    ///   token balance, so the recorded vault can exceed what the contract actually holds.
+    /// - **Plain Addition**: Updates the vault with plain `current + amount`. The release profile
+    ///   sets `overflow-checks = true`, so an overflow traps and aborts the transaction.
+    /// - **No Reconciliation**: No function corrects the vault ledger against the on-chain
+    ///   balance. [`withdraw_fees`](FiatBridge::withdraw_fees) only emits
+    ///   `FeeVaultReconciledEvent` when the ledger exceeds the balance.
     ///
     /// # Arguments
     /// * `env` – The Soroban host environment.
@@ -3209,8 +3255,9 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - **Zero Amount Guard**: Rejects `amount <= 0` to prevent zero/negative withdrawals.
     /// - **Vault Balance Guard**: Validates `amount <= current_accrued_fees` before state changes,
     ///   ensuring `current - amount` cannot underflow.
-    /// - **Reconciliation Safety**: Before transfer, reconciles vault ledger with actual contract balance.
-    ///   If ledger exceeds contract balance, emits `FeeVaultReconciledEvent` and caps withdrawal to available funds.
+    /// - **Reconciliation Signal**: Before transfer, compares the vault ledger with the contract's
+    ///   token balance and emits `FeeVaultReconciledEvent` if the ledger is higher. It does not
+    ///   cap `amount` or adjust the vault; the transfer is attempted for the full `amount`.
     /// - **Guarded Subtraction**: Updates `FeeVault` with guarded subtraction `current - amount` after validation.
     /// - **Nonce Increment**: Increments caller's `FeeWithdrawalNonceByCaller` with checked arithmetic
     ///   to prevent nonce overflow (though practically impossible at u64).
@@ -4392,6 +4439,12 @@ let admin = Self::require_admin(&env)?;
 
     /// Set the rolling 24-hour withdrawal volume threshold for the circuit breaker.
     /// Requires admin. Returns Error::NotInitialized if not initialized.
+    ///
+    /// Volume is accumulated by `withdraw` and `execute_withdrawal`, which trip the
+    /// breaker when the rolling total exceeds `threshold`. `request_withdrawal` and
+    /// `deposit` do not add to the volume; they only reject calls with
+    /// [`Error::CircuitBreakerActive`] while the breaker is tripped. A threshold
+    /// of 0 or less disables volume tracking.
     pub fn set_circuit_breaker_threshold(env: Env, threshold: i128) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         env.storage()
@@ -5273,3 +5326,8 @@ mod test_require_admin_and_denylist;
 #[cfg(test)]
 mod test_withdraw_queue_helpers;
 
+#[cfg(test)]
+mod test_denylist_invariants;
+
+#[cfg(test)]
+mod test_token_allowlist_invariants;

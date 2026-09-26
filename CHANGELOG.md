@@ -883,6 +883,9 @@ Repo Avatar
 - Address frontend security and payout issues
 - **contract:** Validate set_fee_recipient and set_withdraw_operator targets, and emit a fee-recipient event
 - **contract:** Emit AdminTransferEvent in transfer_admin and accept_admin
+- **contract:** Make deny_address and remove_denied_address idempotent
+- **contract:** Stop token allowlist indexes from accumulating duplicates
+- **frontend:** StellarChatInterface reads navigator.onLine during render and duplicates the useOnlineStatus/useMediaQuery hooks
 
 ### Changed
 
@@ -1169,6 +1172,12 @@ Repo Avatar
 - **contract:** Fix UPGRADE_RUNBOOK and VERSION_MIGRATION drift from API
 - **contract:** Trim rustdoc to reduce embedded contract spec size
 - **changelog:** Update changelog [skip ci]
+- **changelog:** Update changelog [skip ci]
+- **contract:** Fix rustdoc that contradicts the code
+- **contract:** Add invariant tests for deny_address and remove_denied_address
+- **contract:** Add invariant tests for the token allowlist entrypoints
+- **contract:** Correct the module table in INVARIANT_TESTING.md
+- Add pull request description
 
 ### Deprecated
 
