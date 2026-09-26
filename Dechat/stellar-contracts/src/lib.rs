@@ -296,6 +296,10 @@ pub struct TokenAllowlistEnabledEntry {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfigSnapshot {
+    /// Schema version of this snapshot. Bump whenever a field is added,
+    /// removed, or changes meaning, so clients can detect a stale ABI
+    /// assumption instead of silently misreading a shifted field.
+    pub version: u32,
     pub admin: Address,
     pub pending_admin: Option<Address>,
     pub token: Address,
@@ -307,6 +311,19 @@ pub struct ConfigSnapshot {
     pub allowlist_enabled: bool,
     pub emergency_recovery: Option<Address>,
     pub anti_sandwich_delay: u32,
+    pub paused: bool,
+    pub min_deposit: i128,
+    pub fee_recipient: Option<Address>,
+    pub withdraw_operator: Option<Address>,
+    pub withdrawal_quota: i128,
+    pub withdrawal_cooldown_ledgers: u32,
+    pub withdrawal_cooldown_threshold: i128,
+    pub withdrawal_expiry_window: u32,
+    pub slippage_threshold: u32,
+    pub upgrade_delay: u32,
+    pub circuit_breaker_threshold: i128,
+    pub circuit_breaker_reset_window: u32,
+    pub multisig_threshold: u32,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────
@@ -1140,13 +1157,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         }
 
         // Denylist
-        if env
-            .storage()
-            .persistent()
-            .has(&DataKey::Denied(from.clone()))
-        {
-            return Err(Error::AddressDenied);
-        }
+        Self::reject_if_denied(&env, &from)?;
 
         // Registry & Limit
         let mut config: TokenConfig = env
@@ -1416,9 +1427,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         // ── Issue #209: circuit breaker check ────────────────────────────
         Self::check_and_update_circuit_breaker(&env, amount)?;
         // Denylist
-        if env.storage().persistent().has(&DataKey::Denied(to.clone())) {
-            return Err(Error::AddressDenied);
-        }
+        Self::reject_if_denied(&env, &to)?;
 
         let client = token::Client::new(&env, &token);
         if amount > client.balance(&env.current_contract_address()) {
@@ -1483,12 +1492,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     ) -> Result<u64, Error> {
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Self::validate_memo_hash(&env, &memo_hash)?;
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         Self::require_not_paused(&env)?;
         Self::require_circuit_breaker_clear(&env)?;
 
@@ -1497,9 +1501,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         }
 
         // Denylist
-        if env.storage().persistent().has(&DataKey::Denied(to.clone())) {
-            return Err(Error::AddressDenied);
-        }
+        Self::reject_if_denied(&env, &to)?;
 
         // Enforce withdrawal cooldown after large deposit
         let withdraw_cooldown: u32 = env
@@ -1740,35 +1742,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             &execute_amount,
         );
 
-        let tier = request.risk_tier;
         if execute_amount == request.amount {
-            env.storage()
-                .persistent()
-                .remove(&DataKey::WithdrawQueue(request_id));
-
-            let queue_len: u64 = env
-                .storage()
-                .instance()
-                .get(&DataKey::WithdrawQueueLen)
-                .unwrap_or(0);
-            if queue_len > 0 {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::WithdrawQueueLen, &(queue_len - 1));
-            }
-            Self::advance_withdraw_queue_head(&env, request_id);
-            // ── Issue #226: advance per-tier head ─────────────────────────
-            let tier_len: u64 = env
-                .storage()
-                .instance()
-                .get(&DataKey::TierQueueLen(tier))
-                .unwrap_or(0);
-            if tier_len > 0 {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::TierQueueLen(tier), &(tier_len - 1));
-            }
-            Self::advance_tier_queue_head(&env, tier, request_id);
+            Self::remove_from_withdraw_queue(&env, request_id, &request);
         } else {
             request.amount -= execute_amount;
             env.storage()
@@ -1782,10 +1757,10 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             .get(&DataKey::TokenRegistry(request.token.clone()))
             .ok_or(Error::TokenNotWhitelisted)?;
         config.total_withdrawn = config.total_withdrawn.checked_add(execute_amount).ok_or(Error::InternalError)?;
-        config.total_liabilities -= execute_amount;
         env.storage()
             .persistent()
             .set(&DataKey::TokenRegistry(request.token.clone()), &config);
+        Self::release_liability(&env, &request.token, execute_amount)?;
 
         Self::check_invariants(&env, &request.token)?;
 
@@ -1817,12 +1792,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * [`Error::RequestNotFound`] – If `request_id` is not present in storage.
     /// * [`Error::TokenNotWhitelisted`] – If the associated token configuration is missing.
     pub fn cancel_withdrawal(env: Env, request_id: u64) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         Self::require_not_paused(&env)?;
         if !env
             .storage()
@@ -1838,46 +1808,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             .get(&DataKey::WithdrawQueue(request_id))
             .ok_or(Error::RequestNotFound)?;
 
-        let tier = request.risk_tier;
-
-        let mut config: TokenConfig = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TokenRegistry(request.token.clone()))
-            .ok_or(Error::TokenNotWhitelisted)?;
-        config.total_liabilities -= request.amount;
-        env.storage()
-            .persistent()
-            .set(&DataKey::TokenRegistry(request.token.clone()), &config);
-
-        env.storage()
-            .persistent()
-            .remove(&DataKey::WithdrawQueue(request_id));
-
-        let queue_len: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::WithdrawQueueLen)
-            .unwrap_or(0);
-        if queue_len > 0 {
-            env.storage()
-                .instance()
-                .set(&DataKey::WithdrawQueueLen, &(queue_len - 1));
-        }
-        Self::advance_withdraw_queue_head(&env, request_id);
-
-        // ── Issue #226: per-tier bookkeeping on cancel ────────────────────
-        let tier_len: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TierQueueLen(tier))
-            .unwrap_or(0);
-        if tier_len > 0 {
-            env.storage()
-                .instance()
-                .set(&DataKey::TierQueueLen(tier), &(tier_len - 1));
-        }
-        Self::advance_tier_queue_head(&env, tier, request_id);
+        Self::release_liability(&env, &request.token, request.amount)?;
+        Self::remove_from_withdraw_queue(&env, request_id, &request);
 
         Self::check_invariants(&env, &request.token)?;
 
@@ -1896,12 +1828,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     pub fn reclaim_expired_withdrawal(env: Env, request_id: u64) -> Result<(), Error> {
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
+        Self::require_not_paused(&env)?;
 
         let request: WithdrawRequest = env
             .storage()
@@ -1921,48 +1849,10 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             return Err(Error::WithdrawalLocked);
         }
 
-        let tier = request.risk_tier;
+        Self::release_liability(&env, &request.token, request.amount)?;
+        Self::remove_from_withdraw_queue(&env, request_id, &request);
 
-        // Release the liability.
-        let mut config: TokenConfig = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TokenRegistry(request.token.clone()))
-            .ok_or(Error::TokenNotWhitelisted)?;
-        config.total_liabilities -= request.amount;
-        env.storage()
-            .persistent()
-            .set(&DataKey::TokenRegistry(request.token.clone()), &config);
-
-        // Remove from queue.
-        env.storage()
-            .persistent()
-            .remove(&DataKey::WithdrawQueue(request_id));
-
-        let queue_len: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::WithdrawQueueLen)
-            .unwrap_or(0);
-        if queue_len > 0 {
-            env.storage()
-                .instance()
-                .set(&DataKey::WithdrawQueueLen, &(queue_len - 1));
-        }
-        Self::advance_withdraw_queue_head(&env, request_id);
-
-        // Per-tier bookkeeping.
-        let tier_len: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TierQueueLen(tier))
-            .unwrap_or(0);
-        if tier_len > 0 {
-            env.storage()
-                .instance()
-                .set(&DataKey::TierQueueLen(tier), &(tier_len - 1));
-        }
-        Self::advance_tier_queue_head(&env, tier, request_id);
+        Self::check_invariants(&env, &request.token)?;
 
         WithdrawalExpiredEvent {
             version: EVENT_VERSION,
@@ -2046,12 +1936,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * [`Error::TokenNotWhitelisted`] – If the token is not registered in the token registry.
     /// * [`Error::ZeroAmount`] – If `limit <= 0`.
     pub fn set_limit(env: Env, token: Address, limit: i128, nonce: u64) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         
         // Validate and increment nonce for replay protection
         Self::validate_and_increment_set_limit_nonce(&env, &admin, nonce)?;
@@ -2092,12 +1977,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         token: Address,
         enabled: bool,
     ) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::TokenAllowlistEnabled(token.clone()), &enabled);
@@ -2126,12 +2006,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn add_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .persistent()
             .set(&DataKey::TokenAllowed(token.clone(), address.clone()), &true);
@@ -2160,12 +2035,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn remove_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .persistent()
             .remove(&DataKey::TokenAllowed(token.clone(), address.clone()));
@@ -2197,12 +2067,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     // ── Issue #113: minimum deposit floor ────────────────────────────
     pub fn set_min_deposit(env: Env, min: i128) -> Result<(), Error> {
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         if min < 1 {
             return Err(Error::BelowMinimum);
         }
@@ -2211,6 +2076,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_min_deposit(env: Env) -> i128 {
         env.storage()
             .instance()
@@ -2225,12 +2091,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     ) -> Result<(), Error> {
 
 env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         let mut config: TokenConfig = env
             .storage()
             .persistent()
@@ -2248,12 +2109,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn set_cooldown(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         // Reject u32::MAX as it could cause overflow issues
         if ledgers == u32::MAX {
@@ -2271,12 +2127,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - `ledgers`   – number of ledgers to wait before withdrawing.  0 disables the guard.
     /// - `threshold` – minimum deposit amount (inclusive) that triggers the cooldown.  0 disables.
     pub fn set_withdrawal_cooldown(env: Env, ledgers: u32, threshold: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         // Reject u32::MAX as it could cause overflow issues
         if ledgers == u32::MAX {
@@ -2301,35 +2152,20 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn set_lock_period(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage().instance().set(&DataKey::LockPeriod, &ledgers);
         Ok(())
     }
 
     pub fn pause(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         env.storage().instance().set(&DataKey::Paused, &true);
         PausedEvent { version: EVENT_VERSION, by: admin.clone() }.publish(&env);
         Ok(())
     }
 
     pub fn unpause(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         env.storage().instance().set(&DataKey::Paused, &false);
         UnpausedEvent { version: EVENT_VERSION, by: admin.clone() }.publish(&env);
         Ok(())
@@ -2404,12 +2240,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - [`DataKey::LastDeposit`] — storage key tracking last deposit per user
     /// - [`Error::AntiSandwichDelayActive`] — error when delay has not elapsed
     pub fn set_anti_sandwich_delay(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         // Reject u32::MAX as it could cause overflow issues
         if ledgers == u32::MAX {
@@ -2423,12 +2254,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         if new_admin == admin {
             return Err(Error::SameAdmin);
         }
@@ -2512,12 +2338,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - [`Error::OracleNotSet`] — error when oracle is not configured
     /// - [`Error::OraclePriceInvalid`] — error when oracle returns invalid price
     pub fn set_oracle(env: Env, oracle: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         
         // Reject self-referential addresses
         if oracle == admin {
@@ -2532,12 +2353,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn set_fiat_limit(env: Env, limit_usd_cents: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::FiatLimit, &limit_usd_cents);
@@ -2760,12 +2576,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         payload: Bytes,
         delay: u32,
     ) -> Result<u64, Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         if delay < MIN_TIMELOCK_DELAY {
             return Err(Error::ActionNotReady);
         }
@@ -2800,12 +2611,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn execute_admin_action(env: Env, id: u64) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         let action: QueuedAdminAction = env
             .storage()
             .persistent()
@@ -2826,14 +2632,13 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     // ── Operator Role & Heartbeat ───────────────────────────────────────
     pub fn set_operator(env: Env, operator: Address, active: bool, nonce: u64) -> Result<(), Error> {
-        let admin: Address = env
+        let admin = Self::require_admin(&env)?;
+
+        let current_slippage_threshold: u32 = env
             .storage()
             .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
-
-        let current_slippage_threshold: u32 = Self::get_slippage_threshold(env.clone());
+            .get(&DataKey::SlippageThreshold)
+            .unwrap_or(0);
         if current_slippage_threshold > 10000 {
             return Err(Error::SlippageTooHigh);
         }
@@ -2902,12 +2707,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn set_max_operators(env: Env, max_operators: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         let current_count: u32 = env
             .storage()
             .instance()
@@ -2955,12 +2755,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * [`Error::MaxDeniedReached`] – If denylist capacity reaches `u64::MAX`.
     /// * [`Error::Overflow`] – If counter increment overflows `u64`.
     pub fn deny_address(env: Env, address: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .persistent()
             .set(&DataKey::Denied(address.clone()), &true);
@@ -3102,12 +2897,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn prune_inactive_operators(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         Self::prune_inactive_operators_internal(&env);
         Ok(())
     }
@@ -3294,12 +3084,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     // ── Ownership Renounce ────────────────────────────────────────────────
     pub fn queue_renounce_admin(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
         // Design decision: block renounce while paused.
         // If we allowed queuing while paused, the timelock could elapse and
@@ -3319,12 +3104,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn remove_denied_address(env: Env, address: Address) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .persistent()
             .remove(&DataKey::Denied(address.clone()));
@@ -3483,12 +3263,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * [`Error::NotInitialized`] – If the contract has not been initialized.
     /// * [`Error::ZeroAmount`] – If `amount <= 0`.
     pub fn accrue_fee(env: Env, token: Address, amount: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
         if amount <= 0 {
             return Err(Error::ZeroAmount);
@@ -3503,12 +3278,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     pub fn cancel_renounce_admin(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         // Validate that a pending renounce exists before canceling
         if !env
@@ -3569,12 +3339,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * [`Error::InvalidNonce`] – If nonce is too high (future nonce).
     pub fn withdraw_fees(env: Env, to: Address, token: Address, amount: i128, nonce: u64) -> Result<(), Error> {
 
-let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+let admin = Self::require_admin(&env)?;
 
         if amount <= 0 {
             return Err(Error::ZeroAmount);
@@ -3654,12 +3419,7 @@ let admin: Address = env
         nonce: u64,
     ) -> Result<(), Error> {
 
-let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+let admin = Self::require_admin(&env)?;
 
         // ── Issue #1113: per-caller replay protection ────────────────────
         Self::validate_and_increment_fee_withdrawal_nonce(&env, &admin, nonce)?;
@@ -3689,12 +3449,7 @@ let admin: Address = env
     }
 
     pub fn execute_renounce_admin(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         let target_ledger: u32 = env
             .storage()
             .instance()
@@ -3713,12 +3468,7 @@ let admin: Address = env
 
     // ── Emergency Token Rescue ────────────────────────────────────────────
     pub fn rescue_token(env: Env, token: Address, to: Address, amount: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
 
         if amount <= 0 {
             return Err(Error::ZeroAmount);
@@ -3828,30 +3578,35 @@ let admin: Address = env
                 .unwrap_or(0),
         }
     }
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_lock_period(env: Env) -> u32 {
         env.storage()
             .instance()
             .get(&DataKey::LockPeriod)
             .unwrap_or(0)
     }
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_cooldown(env: Env) -> u32 {
         env.storage()
             .instance()
             .get(&DataKey::CooldownLedgers)
             .unwrap_or(0)
     }
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_withdrawal_cooldown(env: Env) -> u32 {
         env.storage()
             .instance()
             .get(&DataKey::WithdrawCooldownLedgers)
             .unwrap_or(0)
     }
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_withdrawal_threshold(env: Env) -> i128 {
         env.storage()
             .instance()
             .get(&DataKey::WithdrawCooldownThreshold)
             .unwrap_or(0)
     }
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_slippage_threshold(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -3875,12 +3630,7 @@ let admin: Address = env
     /// - `Error::SlippageTooHigh` – if the threshold exceeds 10000 BPS (100%)
     /// - `Error::InvalidAmount` – if the threshold is u32::MAX
     pub fn set_slippage_threshold(env: Env, threshold_bps: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         // Reject u32::MAX as it could cause overflow issues
         if threshold_bps == u32::MAX {
@@ -3902,18 +3652,13 @@ let admin: Address = env
     // ── Issue #1044: fee recipient management ───────────────────────────
     pub fn set_fee_recipient(env: Env, recipient: Address) -> Result<(), Error> {
 
-let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+let _admin = Self::require_admin(&env)?;
         
         if recipient == env.current_contract_address() {
             return Err(Error::InvalidRecipient);
         }
 
-        let old_recipient = Self::get_fee_recipient(env.clone());
+        let old_recipient = env.storage().instance().get(&DataKey::FeeRecipient);
         env.storage().instance().set(&DataKey::FeeRecipient, &recipient);
 
         FeeRecipientSetEvent {
@@ -3928,14 +3673,9 @@ let admin: Address = env
     pub fn clear_fee_recipient(env: Env) -> Result<(), Error> {
 
         
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
-        let old_recipient = Self::get_fee_recipient(env.clone());
+        let old_recipient = env.storage().instance().get(&DataKey::FeeRecipient);
         env.storage().instance().remove(&DataKey::FeeRecipient);
 
         FeeRecipientSetEvent {
@@ -3947,6 +3687,7 @@ let admin: Address = env
         Ok(())
     }
     
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_fee_recipient(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::FeeRecipient)
     }
@@ -4019,6 +3760,7 @@ let admin: Address = env
             })
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_anti_sandwich_delay(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -4067,6 +3809,7 @@ let admin: Address = env
             .ok_or(Error::NotInitialized)?;
 
         Ok(ConfigSnapshot {
+            version: EVENT_VERSION,
             admin,
             pending_admin: env.storage().instance().get(&DataKey::PendingAdmin),
             token,
@@ -4101,6 +3844,51 @@ let admin: Address = env
                 .instance()
                 .get(&DataKey::AntiSandwichDelay)
                 .unwrap_or(0),
+            paused: env.storage().instance().get(&DataKey::Paused).unwrap_or(false),
+            min_deposit: env.storage().instance().get(&DataKey::MinDeposit).unwrap_or(1),
+            fee_recipient: env.storage().instance().get(&DataKey::FeeRecipient),
+            withdraw_operator: env.storage().instance().get(&DataKey::WithdrawOperator),
+            withdrawal_quota: env
+                .storage()
+                .instance()
+                .get(&DataKey::WithdrawalQuota)
+                .unwrap_or(0),
+            withdrawal_cooldown_ledgers: env
+                .storage()
+                .instance()
+                .get(&DataKey::WithdrawCooldownLedgers)
+                .unwrap_or(0),
+            withdrawal_cooldown_threshold: env
+                .storage()
+                .instance()
+                .get(&DataKey::WithdrawCooldownThreshold)
+                .unwrap_or(0),
+            withdrawal_expiry_window: env
+                .storage()
+                .instance()
+                .get(&DataKey::WithdrawalExpiryWindow)
+                .unwrap_or(WITHDRAWAL_EXPIRY_WINDOW_LEDGERS),
+            slippage_threshold: env
+                .storage()
+                .instance()
+                .get(&DataKey::SlippageThreshold)
+                .unwrap_or(0),
+            upgrade_delay: env
+                .storage()
+                .instance()
+                .get(&DataKey::UpgradeDelay)
+                .unwrap_or(MIN_UPGRADE_DELAY),
+            circuit_breaker_threshold: env
+                .storage()
+                .instance()
+                .get(&DataKey::CircuitBreakerThreshold)
+                .unwrap_or(0),
+            circuit_breaker_reset_window: env
+                .storage()
+                .instance()
+                .get(&DataKey::CircuitBreakerResetWindow)
+                .unwrap_or(CIRCUIT_BREAKER_RESET_LEDGERS),
+            multisig_threshold: env.storage().instance().get(&DataKey::Threshold).unwrap_or(0),
         })
     }
 
@@ -4108,12 +3896,7 @@ let admin: Address = env
     pub fn set_withdrawal_quota(env: Env, quota: i128) -> Result<(), Error> {
 
 env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::WithdrawalQuota, &quota);
@@ -4121,6 +3904,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_withdrawal_quota(env: Env) -> i128 {
         env.storage()
             .instance()
@@ -4132,18 +3916,14 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// can be reclaimed by the admin. Pass `0` to use the compile-time default
     /// (`WITHDRAWAL_EXPIRY_WINDOW_LEDGERS`).
     pub fn set_withdrawal_expiry(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::WithdrawalExpiryWindow, &ledgers);
         Ok(())
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_withdrawal_expiry(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -4260,8 +4040,22 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Err(Error::CircuitBreakerActive)
     }
 
+    /// Loads the configured admin, requires their authentication, and
+    /// returns the address. Replaces the 50+ inline copies of
+    /// `let admin: Address = env.storage().instance().get(&DataKey::Admin)
+    /// .ok_or(Error::NotInitialized)?; admin.require_auth();` that used to
+    /// appear at every admin-gated entrypoint.
+    fn require_admin(env: &Env) -> Result<Address, Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        Ok(admin)
+    }
+
     /// Returns [`Error::AddressDenied`] when `address` is on the denylist.
-    #[allow(dead_code)]
     fn reject_if_denied(env: &Env, address: &Address) -> Result<(), Error> {
         if env
             .storage()
@@ -4273,11 +4067,59 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
-    /// Requires `caller` to authenticate and not be on the denylist.
-    #[allow(dead_code)]
-    fn require_authed_not_denied(env: &Env, caller: &Address) -> Result<(), Error> {
-        caller.require_auth();
-        Self::reject_if_denied(env, caller)
+    /// Removes a fully-settled withdrawal request from both the global and
+    /// per-tier queue bookkeeping. Shared by `execute_withdrawal`,
+    /// `cancel_withdrawal`, and `reclaim_expired_withdrawal`, which otherwise
+    /// each repeated the same remove/decrement/advance sequence.
+    fn remove_from_withdraw_queue(env: &Env, request_id: u64, request: &WithdrawRequest) {
+        env.storage()
+            .persistent()
+            .remove(&DataKey::WithdrawQueue(request_id));
+
+        let queue_len: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::WithdrawQueueLen)
+            .unwrap_or(0);
+        if queue_len > 0 {
+            env.storage()
+                .instance()
+                .set(&DataKey::WithdrawQueueLen, &(queue_len - 1));
+        }
+        Self::advance_withdraw_queue_head(env, request_id);
+
+        let tier = request.risk_tier;
+        let tier_len: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TierQueueLen(tier))
+            .unwrap_or(0);
+        if tier_len > 0 {
+            env.storage()
+                .instance()
+                .set(&DataKey::TierQueueLen(tier), &(tier_len - 1));
+        }
+        Self::advance_tier_queue_head(env, tier, request_id);
+    }
+
+    /// Releases `amount` of previously-reserved liability for `token` using
+    /// checked subtraction. Shared by `execute_withdrawal`,
+    /// `cancel_withdrawal`, and `reclaim_expired_withdrawal`, which used to
+    /// each do this with an unchecked `-=`.
+    fn release_liability(env: &Env, token: &Address, amount: i128) -> Result<(), Error> {
+        let mut config: TokenConfig = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TokenRegistry(token.clone()))
+            .ok_or(Error::TokenNotWhitelisted)?;
+        config.total_liabilities = config
+            .total_liabilities
+            .checked_sub(amount)
+            .ok_or(Error::Overflow)?;
+        env.storage()
+            .persistent()
+            .set(&DataKey::TokenRegistry(token.clone()), &config);
+        Ok(())
     }
 
     fn extend_receipt_ttls_for_depositor(env: &Env, depositor: &Address, min_ttl: u32) {
@@ -4453,12 +4295,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - [`EscrowRecord`] — the target record type produced by migration.
     /// - [`MigrationEvent`] — the event emitted after each batch.
     pub fn migrate_escrow(env: Env, batch_size: u32) -> Result<u32, Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
         let current_version: u32 = env
             .storage()
@@ -4699,12 +4536,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// - `Error::Unauthorized` – if the caller is not the admin
     /// - `Error::InvalidAmount` – if the cursor is zero, negative, or i128::MAX
     pub fn set_migration_cursor(env: Env, cursor: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         
         if cursor <= 0 {
             return Err(Error::InvalidAmount);
@@ -4725,12 +4557,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         operations: Vec<BatchAdminOp>,
     ) -> Result<BatchResult, Error> {
 
-let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+let admin = Self::require_admin(&env)?;
 
         // Issue #841: reject if admin has been granted the operator role (role confusion)
         let admin_is_operator: bool = env
@@ -4960,12 +4787,7 @@ let admin: Address = env
     /// assert_eq!(bridge.get_circuit_breaker_threshold(), 0);
     /// ```
     pub fn set_circuit_breaker_threshold(env: Env, threshold: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::CircuitBreakerThreshold, &threshold);
@@ -5069,12 +4891,7 @@ let admin: Address = env
     /// assert_eq!(bridge.get_circuit_breaker_reset_window(), u32::MAX);
     /// ```
     pub fn set_circuit_breaker_reset_window(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::CircuitBreakerResetWindow, &ledgers);
@@ -5089,6 +4906,7 @@ let admin: Address = env
     ///
     /// A return value of [`u32::MAX`] means auto-reset is disabled; the breaker
     /// will stay tripped until [`Self::reset_circuit_breaker`] is called manually.
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_circuit_breaker_reset_window(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -5172,12 +4990,7 @@ let admin: Address = env
     /// bridge.withdraw(&operator, &recipient, &1, &token)?;
     /// ```
     pub fn reset_circuit_breaker(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::CircuitBreakerTripped, &false);
@@ -5190,6 +5003,7 @@ let admin: Address = env
     /// A return value of `0` means the circuit breaker is disabled and no
     /// volume limit is enforced.  See [`Self::set_circuit_breaker_threshold`]
     /// for the full semantics.
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_circuit_breaker_threshold(env: Env) -> i128 {
         env.storage()
             .instance()
@@ -5457,12 +5271,7 @@ let admin: Address = env
 
     pub fn set_withdraw_operator(env: Env, operator: Address) -> Result<(), Error> {
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
 
         // Reject admin as operator (role confusion guard)
         if operator == admin {
@@ -5480,18 +5289,14 @@ let admin: Address = env
 
     pub fn remove_withdraw_operator(env: Env) -> Result<(), Error> {
         env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
         env.storage().instance().remove(&DataKey::WithdrawOperator);
         RemoveWithdrawOperatorEvent { version: EVENT_VERSION }.publish(&env);
         Ok(())
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_withdraw_operator(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::WithdrawOperator)
     }
@@ -5499,12 +5304,7 @@ let admin: Address = env
     // ── Issue #107: Governed upgrade mechanism ────────────────────────────
 
     pub fn set_upgrade_delay(env: Env, ledgers: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         if ledgers < MIN_UPGRADE_DELAY {
             return Err(Error::UpgradeDelayTooShort);
         }
@@ -5512,6 +5312,7 @@ let admin: Address = env
         Ok(())
     }
 
+    #[deprecated(note = "use get_config_snapshot instead")]
     pub fn get_upgrade_delay(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -5534,12 +5335,7 @@ let admin: Address = env
     /// * [`Error::Unauthorized`] – If caller is not admin.
     #[allow(deprecated)]
     pub fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>, delay: u32, _new_version: u32) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
 
         // Validate delay is not zero to prevent immediate upgrade
         if delay == 0 {
@@ -5613,12 +5409,7 @@ let admin: Address = env
 
     #[allow(deprecated)]
     pub fn cancel_upgrade(env: Env, nonce: u64) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
 
         // Validate and increment nonce for replay protection
         let new_nonce = Self::consume_nonce(
@@ -5657,9 +5448,7 @@ let admin: Address = env
     /// Add timing metadata to a proposal made by earlier contract versions.
     /// Its original execution deadline remains unchanged.
     pub fn migrate_upgrade_proposal_timing(env: Env) -> Result<(), Error> {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         if env.storage().instance().has(&DataKey::UpgradeProposalTiming) {
             return Ok(());
         }
@@ -5840,12 +5629,7 @@ let admin: Address = env
 
     /// Set a hard cap on the maximum value that can be passed to `set_limit`.
     pub fn set_limit_max_cap(env: Env, cap: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         if cap <= 0 {
             return Err(Error::ZeroAmount);
         }
@@ -5872,12 +5656,7 @@ let admin: Address = env
 
     /// Set a per-operator daily withdrawal limit.
     pub fn set_operator_daily_limit(env: Env, operator: Address, limit: i128) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let _admin = Self::require_admin(&env)?;
         env.storage()
             .instance()
             .set(&DataKey::OperatorDailyLimit(operator), &limit);
@@ -5890,12 +5669,7 @@ let admin: Address = env
         recovery: Address,
         cap: i128,
     ) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
         if cap <= 0 {
             return Err(Error::ZeroAmount);
         }
@@ -5978,12 +5752,7 @@ let admin: Address = env
     /// Migrate the legacy global fee-withdrawal nonce to the admin's per-caller
     /// nonce. Safe to call multiple times; only copies when the target is absent.
     pub fn migrate_fee_withdrawal_nonce(env: Env) -> Result<(), Error> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
+        let admin = Self::require_admin(&env)?;
 
         if let Some(legacy_nonce) = env
             .storage()
@@ -6125,4 +5894,10 @@ mod test_migrate_fee_withdrawal_nonce;
 
 #[cfg(test)]
 mod test_view_functions_emit_no_events;
+
+#[cfg(test)]
+mod test_require_admin_and_denylist;
+
+#[cfg(test)]
+mod test_withdraw_queue_helpers;
 

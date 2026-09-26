@@ -159,3 +159,41 @@ fn snapshot_receipt_field_immutability() {
     let receipt_id_again = client.get_receipt_by_index(&0u64).unwrap().id;
     assert_eq!(receipt_id_again, receipt.id, "Receipt id should be same on repeated reads");
 }
+
+/// Snapshot test for get_config_snapshot: Issue #1428 extended ConfigSnapshot
+/// with the fields that used to require separate getter calls, and added a
+/// `version` field.
+#[test]
+fn snapshot_get_config_snapshot_reflects_admin_config() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, token_addr, _token) = setup(&env);
+
+    client.set_withdrawal_quota(&1_000_000i128);
+    client.set_fee_recipient(&admin);
+
+    let snapshot = client.get_config_snapshot();
+
+    assert_eq!(snapshot.admin, admin);
+    assert_eq!(snapshot.token, token_addr);
+    assert_eq!(snapshot.min_deposit, 1);
+    assert_eq!(snapshot.withdrawal_quota, 1_000_000);
+    assert_eq!(snapshot.fee_recipient, Some(admin));
+    assert!(!snapshot.paused);
+}
+
+/// The snapshot's `paused` field reflects live pause state.
+#[test]
+fn snapshot_get_config_snapshot_reflects_paused_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _token_addr, _token) = setup(&env);
+
+    client.pause();
+    assert!(client.get_config_snapshot().paused);
+
+    client.unpause();
+    assert!(!client.get_config_snapshot().paused);
+}
