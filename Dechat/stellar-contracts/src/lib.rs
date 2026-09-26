@@ -181,7 +181,6 @@ pub struct Receipt {
     pub amount: i128,
     pub ledger: u32,
     pub reference: Bytes,
-    pub refunded: bool,
     pub memo_hash: Option<BytesN<32>>,
 }
 
@@ -575,6 +574,7 @@ pub struct FeeWithdrawnEvent {
     pub version: u32,
     pub to: Address,
     pub amount: i128,
+    pub token: Address,
 }
 
 #[contractevent]
@@ -1220,7 +1220,6 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             amount,
             ledger: env.ledger().sequence(),
             reference,
-            refunded: false,
             memo_hash: memo_hash.clone(),
         };
         env.storage()
@@ -2195,7 +2194,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         let proposed_at = env.ledger().sequence() as u64;
         env.storage()
             .instance()
-            .set(&DataKey::PendingAdmin, &(new_admin, proposed_at));
+            .set(&DataKey::PendingAdmin, &(new_admin.clone(), proposed_at));
+        AdminTransferEvent { version: EVENT_VERSION, old_admin: admin, new_admin }.publish(&env);
         Ok(())
     }
 
@@ -2212,8 +2212,14 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         if current < unlock_at {
             return Err(Error::ActionNotReady);
         }
+        let old_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
         env.storage().instance().set(&DataKey::Admin, &pending);
         env.storage().instance().remove(&DataKey::PendingAdmin);
+        AdminTransferEvent { version: EVENT_VERSION, old_admin, new_admin: pending }.publish(&env);
         Ok(())
     }
 
@@ -2237,6 +2243,9 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     pub fn set_fiat_limit(env: Env, limit_usd_cents: i128) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
+        if limit_usd_cents < 0 {
+            return Err(Error::InvalidAmount);
+        }
         env.storage()
             .instance()
             .set(&DataKey::FiatLimit, &limit_usd_cents);
@@ -2349,13 +2358,13 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         token: &Address,
         amount: i128,
     ) -> Result<i128, Error> {
-        let oracle_addr = env.storage().instance().get::<_, Address>(&DataKey::Oracle);
         let fiat_limit = env.storage().instance().get::<_, i128>(&DataKey::FiatLimit);
 
-        if oracle_addr.is_none() && fiat_limit.is_none() {
+        if fiat_limit.is_none() || fiat_limit == Some(0) {
             return Ok(0);
         }
 
+        let oracle_addr = env.storage().instance().get::<_, Address>(&DataKey::Oracle);
         let price = if let Some(addr) = oracle_addr {
             let oracle = crate::oracle::OracleClient::new(env, &addr);
             let p = oracle.get_price(token).unwrap_or(0);
@@ -3275,7 +3284,7 @@ let admin = Self::require_admin(&env)?;
         env.storage().persistent().set(&key, &(current - amount));
         // Commit the nonce advance now that every failure path has passed.
         Self::consume_nonce(&env, nonce_key, nonce)?;
-        FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient, amount }.publish(&env);
+        FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient, amount, token }.publish(&env);
         Ok(())
     }
 
@@ -3325,7 +3334,7 @@ let admin = Self::require_admin(&env)?;
             let token_client = token::Client::new(&env, &token);
             token_client.transfer(&contract, &recipient, &current);
             env.storage().persistent().set(&key, &0i128);
-            FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient.clone(), amount: current }.publish(&env);
+            FeeWithdrawnEvent { version: EVENT_VERSION, to: recipient.clone(), amount: current, token: token.clone() }.publish(&env);
         }
 
         Ok(())
