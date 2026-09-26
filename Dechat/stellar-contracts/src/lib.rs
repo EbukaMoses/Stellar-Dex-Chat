@@ -5328,3 +5328,6 @@ mod test_withdraw_queue_helpers;
 
 #[cfg(test)]
 mod test_denylist_invariants;
+
+#[cfg(test)]
+mod test_token_allowlist_invariants;
