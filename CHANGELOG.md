@@ -1160,6 +1160,8 @@ Repo Avatar
 - **contract:** Cover migrate_upgrade_proposal_timing and set_withdraw_operator / remove_withdraw_operator
 - **contract:** Cover set_migration_cursor bounds and resumable migrate_escrow batches
 - Reject merge-conflict markers and lint workflow YAML with actionlint before merge
+- **changelog:** Update changelog [skip ci]
+- **contract:** Consolidate nonce sites, fix fee-withdrawal nonce bug, remove view-function events and telemetry
 
 ### Deprecated
 
