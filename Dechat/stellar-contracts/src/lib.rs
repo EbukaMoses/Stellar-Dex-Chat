@@ -2171,74 +2171,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
-    /// Sets the anti-sandwich delay in ledgers for deposit operations.
-    ///
-    /// This function configures a minimum delay between consecutive deposits
-    /// from the same address to prevent sandwich attacks. When enabled, users
-    /// must wait the specified number of ledgers before making another deposit.
-    ///
-    /// The anti-sandwich mechanism is a protection measure that limits the rate
-    /// at which a single address can submit deposits, making it more difficult
-    /// for attackers to sandwich legitimate transactions with their own.
-    ///
-    /// Only the current admin can call this function. Setting the delay to `0`
-    /// disables the anti-sandwich protection entirely.
-    ///
-    /// # Parameters
-    ///
-    /// - `ledgers` — the minimum number of ledgers that must pass between
-    ///   consecutive deposits from the same address. A value of `0` disables
-    ///   the protection. Typical values range from a few dozen to a few hundred
-    ///   ledgers (each ledger is approximately 5 seconds on Stellar).
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` — the anti-sandwich delay was successfully updated.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialized.
-    /// - [`Error::Unauthorized`] — the caller is not the current admin.
-    ///
-    /// # Notes
-    ///
-    /// - The delay is stored in instance storage under [`DataKey::AntiSandwichDelay`].
-    /// - The last deposit ledger for each user is tracked in temporary storage.
-    /// - During deposit, the contract checks if the current ledger is less than
-    ///   `last_deposit_ledger + anti_sandwich_delay` and returns
-    ///   [`Error::AntiSandwichDelayActive`] if the delay has not elapsed.
-    /// - This protection is independent of the general cooldown mechanism
-    ///   configured by [`FiatBridge::set_cooldown`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Set anti-sandwich delay to 100 ledgers (~8 minutes).
-    /// bridge.set_anti_sandwich_delay(&100).expect("admin only");
-    ///
-    /// // Verify the delay was set.
-    /// assert_eq!(bridge.get_anti_sandwich_delay(), 100);
-    ///
-    /// // First deposit succeeds.
-    /// bridge.deposit(&user, &100, &token, &Bytes::new(&env), &0, &0, &None);
-    ///
-    /// // Second deposit immediately fails with AntiSandwichDelayActive.
-    /// let result = bridge.try_deposit(&user, &100, &token, &Bytes::new(&env), &0, &0, &None);
-    /// assert_eq!(result, Err(Error::AntiSandwichDelayActive));
-    ///
-    /// // Disable the protection.
-    /// bridge.set_anti_sandwich_delay(&0).expect("admin only");
-    /// assert_eq!(bridge.get_anti_sandwich_delay(), 0);
-    /// ```
-    ///
-    /// # Cross-references
-    ///
-    /// - [`FiatBridge::get_anti_sandwich_delay`] — retrieves the current delay value
-    /// - [`FiatBridge::set_cooldown`] — sets the general deposit cooldown
-    /// - [`FiatBridge::deposit`] — enforces this delay during deposit operations
-    /// - [`DataKey::AntiSandwichDelay`] — storage key for this value
-    /// - [`DataKey::LastDeposit`] — storage key tracking last deposit per user
-    /// - [`Error::AntiSandwichDelayActive`] — error when delay has not elapsed
+    /// Set the anti-sandwich delay in ledgers for deposit operations.
+    /// Use 0 to disable. Requires admin.
     pub fn set_anti_sandwich_delay(env: Env, ledgers: u32) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         
@@ -2284,59 +2218,8 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     // ── Fiat Limits & Oracle ──────────────────────────────────────────────
-    /// Sets the oracle contract address for fiat price validation.
-    ///
-    /// This function configures the oracle address used by the contract to
-    /// obtain token prices in USD cents for fiat limit enforcement. The oracle
-    /// is called during deposit operations to validate that the fiat value of
-    /// deposits does not exceed configured limits.
-    ///
-    /// Only the current admin can call this function. The oracle address can
-    /// be updated at any time by the admin, allowing for oracle migration or
-    /// replacement as needed.
-    ///
-    /// # Parameters
-    ///
-    /// - `oracle` — the address of the oracle contract that provides price feeds.
-    ///   This address must implement the expected oracle interface for price
-    ///   queries.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` — the oracle address was successfully updated.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialized.
-    /// - [`Error::Unauthorized`] — the caller is not the current admin.
-    ///
-    /// # Notes
-    ///
-    /// - The oracle address is stored in instance storage.
-    /// - Setting an invalid oracle address will cause subsequent deposits to
-    ///   fail with [`Error::OracleNotSet`] or [`Error::OraclePriceInvalid`].
-    /// - This function does not validate that the oracle address is a valid
-    ///   contract or that it implements the required interface.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Set the oracle address.
-    /// let oracle_addr = Address::from_string(&soroban_sdk::String::from_str(&env, "G..."));
-    /// bridge.set_oracle(&oracle_addr).expect("admin only");
-    ///
-    /// // Verify the oracle was set.
-    /// let stored_oracle = bridge.get_config_snapshot().unwrap().oracle;
-    /// assert_eq!(stored_oracle, Some(oracle_addr));
-    /// ```
-    ///
-    /// # Cross-references
-    ///
-    /// - [`FiatBridge::set_fiat_limit`] — sets the fiat limit enforced using oracle prices
-    /// - [`FiatBridge::validate_fiat_limit`] — internal function that uses the oracle
-    /// - [`DataKey::Oracle`] — storage key for this value
-    /// - [`Error::OracleNotSet`] — error when oracle is not configured
-    /// - [`Error::OraclePriceInvalid`] — error when oracle returns invalid price
+    /// Set the oracle contract address for fiat price validation. Requires admin.
+    /// Returns Error::SelfReferentialAddress if oracle == admin or contract.
     pub fn set_oracle(env: Env, oracle: Address) -> Result<(), Error> {
         let admin = Self::require_admin(&env)?;
         
@@ -4219,81 +4102,7 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     }
 
     /// Migrate receipt data to persistent escrow records in batches.
-    ///
-    /// The bridge issues deposits as [`Receipt`] entries stored in persistent
-    /// storage keyed by receipt hash, with a sequential index in temporary
-    /// storage for enumeration.  Temporary entries have a limited TTL, so for
-    /// long-lived escrow positions the data must be promoted to a persistent,
-    /// sequentially-keyed [`EscrowRecord`] that will not expire.
-    ///
-    /// This function walks the receipt index from the current cursor forward,
-    /// copying each receipt it finds into a persistent `EscrowRecord` slot.
-    /// The process is batched (`batch_size` entries per call) so that it can
-    /// be resumed across multiple invocations — useful when the total number
-    /// of receipts is large and a single call would exceed the Soroban budget.
-    ///
-    /// # Caller requirements
-    ///
-    /// - `admin` (the stored admin address) **must** authenticate.  See
-    ///   [`FiatBridge::transfer_admin`] for the two-step admin transfer flow.
-    ///
-    /// # Parameters
-    ///
-    /// - `batch_size` — maximum number of receipt positions to process in
-    ///   this call.  A value of `0` is accepted and immediately returns `0`.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(count)` — the number of receipts successfully migrated in this
-    ///   batch (may be less than `batch_size` when the remaining receipts
-    ///   are fewer).  `count` is `0` when the cursor has already reached the
-    ///   end of the receipt counter.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialised
-    ///   (no `Admin` key in storage).
-    /// - [`Error::MigrationAlreadyComplete`] — the stored version equals or
-    ///   exceeds [`ESCROW_STORAGE_VERSION`]; a second call is a no-op.
-    ///
-    /// # Notes
-    ///
-    /// - A receipt index entry that has **expired** from temporary storage is
-    ///   silently skipped (no `EscrowRecord` is created for that slot).  The
-    ///   cursor still advances past it, leaving a permanent gap at that id.
-    /// - The same applies when the persistent `Receipt` entry has been removed
-    ///   (e.g. after a refund or manual cleanup).
-    /// - When the last receipt in the counter has been processed, the stored
-    ///   version is bumped so that subsequent calls return
-    ///   `MigrationAlreadyComplete` immediately.
-    /// - A [`MigrationEvent`] is emitted after every batch with the new cursor
-    ///   position and the count of records migrated in that invocation.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Deposit two test receipts.
-    /// bridge.deposit(&user, &100, &token, &Bytes::new(&env), &0, &0, &None);
-    /// bridge.deposit(&user, &250, &token, &Bytes::new(&env), &0, &0, &None);
-    ///
-    /// // Migrate a batch of up to 10.
-    /// let count = bridge.migrate_escrow(&10);
-    /// assert_eq!(count, 2);               // both receipts migrated
-    /// assert_eq!(bridge.get_migration_cursor(), 2);
-    ///
-    /// // Now a second call is a no-op (version already bumped).
-    /// assert_eq!(
-    ///     bridge.try_migrate_escrow(&10),
-    ///     Err(Ok(Error::MigrationAlreadyComplete))
-    /// );
-    /// ```
-    ///
-    /// ## See also
-    /// - [`FiatBridge::get_escrow_storage_version`] — query current version.
-    /// - [`FiatBridge::get_escrow_record`] — read a migrated record by id.
-    /// - [`FiatBridge::get_migration_cursor`] — current cursor position.
-    /// - [`EscrowRecord`] — the target record type produced by migration.
-    /// - [`MigrationEvent`] — the event emitted after each batch.
+    /// Returns count migrated in this batch. Requires admin. Emits MigrationEvent.
     pub fn migrate_escrow(env: Env, batch_size: u32) -> Result<u32, Error> {
         let _admin = Self::require_admin(&env)?;
 
@@ -4377,142 +4186,14 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(migrated_count)
     }
 
-    /// Look up a single migrated escrow position by its sequential id.
-    ///
-    /// This is the read side of the receipt→escrow migration and the intended
-    /// way for indexers, dashboards and off-chain reconciliation jobs to
-    /// enumerate escrowed balances: ids are dense and start at `0`, so a caller
-    /// can walk `0..get_migration_cursor()` without knowing any receipt hashes.
-    /// It is a plain storage read — no authentication is required and no state
-    /// is mutated, so it is safe to call from a simulation.
-    ///
-    /// An id maps to the position the originating [`Receipt`] occupied in
-    /// `DataKey::ReceiptIndex`, so escrow id `n` always describes the `n`-th
-    /// deposit the bridge ever recorded.
-    ///
-    /// # Parameters
-    ///
-    /// - `id`: zero-based index of the escrow record, in deposit order. Values
-    ///   at or above [`FiatBridge::get_migration_cursor`] have not been migrated yet.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(record)` — the stored [`EscrowRecord`] for `id`.
-    /// - `None` — in three distinct situations, which this function does *not*
-    ///   distinguish between:
-    ///   1. `id` is beyond the migration cursor, so the record has simply not
-    ///      been written yet (call [`FiatBridge::migrate_escrow`] to advance);
-    ///   2. `id` is past the end of the receipt range and will never exist;
-    ///   3. the source receipt had been evicted from `temporary` storage before
-    ///      migration reached it, so that cursor position was skipped and left
-    ///      permanently empty.
-    ///
-    ///   Compare `id` against [`FiatBridge::get_migration_cursor`] and
-    ///   [`FiatBridge::get_escrow_storage_version`] to tell case 1 from cases 2 and 3.
-    ///
-    /// # Errors
-    ///
-    /// None. This function cannot fail: a missing entry is reported as `None`
-    /// rather than an [`Error`], and it neither requires auth nor panics.
-    ///
-    /// # Notes
-    ///
-    /// - Reading does not extend the entry's TTL. A record whose persistent TTL
-    ///   has lapsed reads back as `None`; use the receipt TTL-bumping paths to
-    ///   keep long-lived positions alive.
-    /// - The returned `version` field should be checked against
-    ///   [`ESCROW_STORAGE_VERSION`] before interpreting the payload, so that a
-    ///   future schema bump surfaces as a version mismatch rather than a
-    ///   silently misread record.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Two deposits, then a migration large enough to cover both.
-    /// bridge.deposit(&user, &100, &token, &Bytes::new(&env), &0, &0, &None);
-    /// bridge.deposit(&user, &250, &token, &Bytes::new(&env), &0, &0, &None);
-    /// assert_eq!(bridge.migrate_escrow(&10), 2);
-    ///
-    /// // Ids are dense and ordered by deposit, so escrow 1 is the 250 deposit.
-    /// let record = bridge.get_escrow_record(&1).expect("migrated");
-    /// assert_eq!(record.amount, 250);
-    /// assert_eq!(record.depositor, user);
-    /// assert_eq!(record.version, ESCROW_STORAGE_VERSION);
-    /// assert!(record.migrated);
-    ///
-    /// // Nothing was ever deposited at index 2.
-    /// assert!(bridge.get_escrow_record(&2).is_none());
-    /// ```
+    /// Look up a migrated escrow position by its sequential deposit id.
+    /// Returns None if not yet migrated or missing. Plain storage read (no auth required).
     pub fn get_escrow_record(env: Env, id: u64) -> Option<EscrowRecord> {
         env.storage().persistent().get(&DataKey::EscrowRecord(id))
     }
 
-    /// Returns the current position of the receipt→escrow migration.
-    ///
-    /// This function reports how many receipt positions have been successfully
-    /// migrated to persistent [`EscrowRecord`] entries by [`FiatBridge::migrate_escrow`].
-    /// The cursor is a monotonically increasing counter that starts at `0` and
-    /// advances as migration progresses.
-    ///
-    /// This is the primary way for indexers, dashboards, and off-chain services
-    /// to track migration progress and determine which escrow records are available
-    /// for enumeration via [`FiatBridge::get_escrow_record`].
-    ///
-    /// # Parameters
-    ///
-    /// None. This is a read-only view function that requires no arguments.
-    ///
-    /// # Returns
-    ///
-    /// - `u64` — the current migration cursor value. This represents the number
-    ///   of receipt positions that have been migrated. All escrow records with
-    ///   ids in the range `0..cursor` are guaranteed to exist (unless evicted).
-    ///   Returns `0` if migration has not started or the cursor was never set.
-    ///
-    /// # Errors
-    ///
-    /// None. This function cannot fail: it performs a simple storage read and
-    /// returns a default value (`0`) if the cursor has never been initialized.
-    /// No authentication is required and no state is mutated.
-    ///
-    /// # Notes
-    ///
-    /// - The cursor is stored in instance storage and persists across contract
-    ///   invocations.
-    /// - When the cursor equals the receipt counter, migration is considered
-    ///   complete and [`FiatBridge::get_escrow_storage_version`] is updated.
-    /// - This function is safe to call from a simulation context since it requires
-    ///   no auth and mutates no state.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Initially, no migration has occurred.
-    /// assert_eq!(bridge.get_migration_cursor(), 0);
-    ///
-    /// // Deposit some receipts.
-    /// bridge.deposit(&user, &100, &token, &Bytes::new(&env), &0, &0, &None);
-    /// bridge.deposit(&user, &250, &token, &Bytes::new(&env), &0, &0, &None);
-    ///
-    /// // Migrate up to 10 receipts.
-    /// let migrated = bridge.migrate_escrow(&10);
-    /// assert_eq!(migrated, 2);
-    ///
-    /// // Cursor now reflects the 2 migrated positions.
-    /// assert_eq!(bridge.get_migration_cursor(), 2);
-    ///
-    /// // Escrow records 0 and 1 are now available.
-    /// assert!(bridge.get_escrow_record(&0).is_some());
-    /// assert!(bridge.get_escrow_record(&1).is_some());
-    /// assert!(bridge.get_escrow_record(&2).is_none()); // Beyond cursor
-    /// ```
-    ///
-    /// # Cross-references
-    ///
-    /// - [`FiatBridge::migrate_escrow`] — advances this cursor
-    /// - [`FiatBridge::get_escrow_record`] — reads records using this cursor
-    /// - [`FiatBridge::get_escrow_storage_version`] — indicates migration completion
-    /// - [`DataKey::EscrowMigrationCursor`] — storage key for this value
+    /// Returns the current migration cursor position (how many receipts have been migrated).
+    /// Plain storage read (no auth required). Defaults to 0 if not yet set.
     pub fn get_migration_cursor(env: Env) -> u64 {
         env.storage()
             .instance()
@@ -4700,92 +4381,8 @@ let admin = Self::require_admin(&env)?;
 
     // ── Issue #209: global circuit breaker ───────────────────────────────
 
-    /// Set the rolling withdrawal volume threshold that trips the global circuit breaker.
-    ///
-    /// The circuit breaker is a safety mechanism that automatically halts withdrawals
-    /// when unusual outflow volume is detected within a rolling 24-hour window
-    /// (~17 280 ledgers at 5 s/ledger). This function controls the volume level at
-    /// which that halt triggers.
-    ///
-    /// When cumulative withdrawal volume inside the current 24-hour ledger window
-    /// reaches or exceeds `threshold`, the breaker trips: the offending withdrawal
-    /// still executes, but a [`CircuitBreakerTrippedEvent`] is emitted and every
-    /// subsequent guarded operation returns [`Error::CircuitBreakerActive`] until
-    /// the breaker is cleared.
-    ///
-    /// The volume check runs on every withdrawal-producing path, covering:
-    /// - direct operator withdrawals ([`Self::withdraw`])
-    /// - queued withdrawal execution ([`Self::execute_withdrawal`])
-    /// - queued withdrawal requests ([`Self::request_withdrawal`])
-    ///
-    /// # Parameters
-    ///
-    /// - `threshold` (`i128`): the cumulative 24-hour withdrawal volume that triggers
-    ///   the breaker, expressed in the token's smallest indivisible unit (e.g. stroops
-    ///   for XLM).
-    ///   - `> 0` — enables the breaker; trips when the rolling 24-hour volume
-    ///     meets or exceeds this value.
-    ///   - `== 0` — disables the breaker entirely; all guarded withdrawal paths
-    ///     skip the volume check.
-    ///   - Negative values are treated identically to `0` (disabled), because the
-    ///     internal guard evaluates `threshold <= 0`.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success. The value is persisted to instance storage and takes
-    /// effect on the very next withdrawal evaluation.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialised yet
-    ///   (no admin stored in instance storage). Call `init` first.
-    /// - Panics with a Soroban host auth error if the caller is not the current admin.
-    ///   Use [`Self::transfer_admin`] to inspect or change the admin address.
-    ///
-    /// # Notes
-    ///
-    /// - The new threshold takes effect immediately for the **next** withdrawal
-    ///   evaluation; it does not retroactively clear or trip the breaker.
-    /// - Lowering the threshold while the breaker is already tripped has no
-    ///   additional effect — the breaker remains tripped until explicitly cleared.
-    ///   Raising the threshold while the breaker is tripped likewise does not
-    ///   auto-clear it; call [`Self::reset_circuit_breaker`] explicitly.
-    /// - Setting `threshold` to `0` while the breaker is tripped does **not**
-    ///   automatically clear it. Clear the breaker first with
-    ///   [`Self::reset_circuit_breaker`], then set the threshold to `0`.
-    /// - The rolling 24-hour volume accumulator is **not** reset by this call.
-    ///   Volume tracked before this call counts toward the new threshold on the
-    ///   next withdrawal.
-    /// - To read the currently active threshold, call
-    ///   [`Self::get_circuit_breaker_threshold`].
-    /// - To clear a tripped breaker, call [`Self::reset_circuit_breaker`].
-    /// - To configure how long the breaker stays tripped before auto-reset, call
-    ///   [`Self::set_circuit_breaker_reset_window`].
-    /// - To inspect whether the breaker is currently tripped, call
-    ///   [`Self::is_circuit_breaker_tripped`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // 1. Enable the breaker: trip if more than 10 000 stroops are withdrawn
-    /// //    within any rolling 24-hour window (~17 280 ledgers at 5 s/ledger).
-    /// bridge.set_circuit_breaker_threshold(&env, 10_000)?;
-    /// assert_eq!(bridge.get_circuit_breaker_threshold(), 10_000);
-    ///
-    /// // 2. A withdrawal that pushes cumulative volume past 10 000 stroops will
-    /// //    still execute, emit CircuitBreakerTrippedEvent, and then block
-    /// //    all subsequent guarded operations with Error::CircuitBreakerActive.
-    /// bridge.withdraw(&operator, &recipient, &10_001, &token)?;
-    /// assert!(bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 3. After investigating, clear the breaker manually and resume operations.
-    /// bridge.reset_circuit_breaker()?;
-    /// assert!(!bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 4. Disable the breaker entirely — no volume limit enforced.
-    /// bridge.set_circuit_breaker_threshold(&env, 0)?;
-    /// assert_eq!(bridge.get_circuit_breaker_threshold(), 0);
-    /// ```
+    /// Set the rolling 24-hour withdrawal volume threshold for the circuit breaker.
+    /// Requires admin. Returns Error::NotInitialized if not initialized.
     pub fn set_circuit_breaker_threshold(env: Env, threshold: i128) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         env.storage()
@@ -4794,102 +4391,8 @@ let admin = Self::require_admin(&env)?;
         Ok(())
     }
 
-    /// Configure how long the circuit breaker stays tripped before it clears itself automatically.
-    ///
-    /// When the breaker trips it can either stay tripped indefinitely (requiring a
-    /// manual admin call to clear it) or clear itself once a configurable ledger count
-    /// has elapsed. This function lets operators choose between those two modes and
-    /// tune how aggressive the cool-down period is — a shorter window restores normal
-    /// operations sooner after a spike; a longer window (or `u32::MAX`) forces a human
-    /// review before withdrawals resume.
-    ///
-    /// When the breaker trips, the contract records the current ledger sequence number.
-    /// On every subsequent guarded withdrawal path the contract evaluates:
-    ///
-    /// ```text
-    /// current_ledger > tripped_at + reset_window
-    /// ```
-    ///
-    /// If that condition holds, the breaker auto-resets: the tripped flag is cleared,
-    /// the 24-hour withdrawal volume window is rolled forward, and a
-    /// [`CircuitBreakerAutoResetEvent`] is emitted before the operation continues.
-    ///
-    /// If the condition does not hold, or auto-reset is disabled, the operation returns
-    /// [`Error::CircuitBreakerActive`].
-    ///
-    /// If this function has never been called, the runtime falls back to the compile-time
-    /// constant `CIRCUIT_BREAKER_RESET_LEDGERS` (34 560 ledgers, ~48 hours at 5 s/ledger).
-    ///
-    /// # Parameters
-    ///
-    /// - `ledgers` (`u32`): the number of ledgers after the breaker trips before it
-    ///   auto-resets.
-    ///   - `u32::MAX` — disables auto-reset entirely; the breaker will remain tripped
-    ///     until [`Self::reset_circuit_breaker`] is called manually. Use this for
-    ///     high-security deployments where every trip must be reviewed by an admin.
-    ///   - `17_280` — auto-reset after ~24 hours (1 × `WINDOW_LEDGERS`). A balanced
-    ///     default for most production deployments.
-    ///   - `34_560` — auto-reset after ~48 hours (the compile-time default). Gives
-    ///     a full business-day buffer for out-of-hours incidents.
-    ///   - any other non-`MAX` value — auto-resets that many ledgers after the trip.
-    ///   - `0` — the condition `current_ledger > tripped_at + 0` becomes true on the
-    ///     very next ledger, so the breaker effectively auto-resets immediately. This
-    ///     is almost never the right choice; call [`Self::reset_circuit_breaker`] for
-    ///     an instant manual clear instead.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success. The value is persisted to instance storage and takes
-    /// effect on the very next guarded withdrawal evaluation.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialised (no admin
-    ///   in instance storage). Call `init` first.
-    /// - Panics with a Soroban host auth error if the caller is not the current admin.
-    ///   Use [`Self::transfer_admin`] to inspect or change the admin address.
-    ///
-    /// # Notes
-    ///
-    /// - The new window takes effect immediately for the next guarded evaluation;
-    ///   it does not retroactively change whether the breaker is currently tripped.
-    /// - Changing the window while the breaker is already tripped does not clear it.
-    ///   If you want to shorten the wait and resume immediately, call
-    ///   [`Self::reset_circuit_breaker`] explicitly.
-    /// - The auto-reset check uses `saturating_add` to guard against `tripped_at`
-    ///   overflow. Values near `u32::MAX - 1` will saturate at `u32::MAX`, and the
-    ///   condition will never be true unless `current_ledger` also reaches `u32::MAX`.
-    /// - To read the currently active window, call [`Self::get_circuit_breaker_reset_window`].
-    /// - To set the withdrawal volume threshold that trips the breaker, call
-    ///   [`Self::set_circuit_breaker_threshold`].
-    /// - To clear a tripped breaker right now without waiting, call
-    ///   [`Self::reset_circuit_breaker`].
-    /// - To inspect whether the breaker is currently tripped, call
-    ///   [`Self::is_circuit_breaker_tripped`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // 1. Configure a 24-hour auto-reset window (~17 280 ledgers at 5 s/ledger).
-    /// bridge.set_circuit_breaker_reset_window(&env, 17_280)?;
-    /// assert_eq!(bridge.get_circuit_breaker_reset_window(), 17_280);
-    ///
-    /// // 2. Trip the breaker by crossing the volume threshold.
-    /// bridge.set_circuit_breaker_threshold(&env, 500)?;
-    /// bridge.withdraw(&operator, &recipient, &501, &token)?;
-    /// assert!(bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 3. Advance the ledger past the reset window; the next guarded
-    /// //    withdrawal will auto-reset the breaker and emit
-    /// //    CircuitBreakerAutoResetEvent before proceeding.
-    /// env.ledger().set_sequence_number(env.ledger().sequence() + 17_281);
-    /// bridge.withdraw(&operator, &recipient, &1, &token)?; // succeeds; breaker cleared
-    /// assert!(!bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 4. Disable auto-reset — only a manual reset_circuit_breaker call can clear it.
-    /// bridge.set_circuit_breaker_reset_window(&env, u32::MAX)?;
-    /// assert_eq!(bridge.get_circuit_breaker_reset_window(), u32::MAX);
-    /// ```
+    /// Configure the circuit breaker auto-reset window in ledgers.
+    /// Use u32::MAX to disable auto-reset. Requires admin.
     pub fn set_circuit_breaker_reset_window(env: Env, ledgers: u32) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         env.storage()
@@ -4914,81 +4417,8 @@ let admin = Self::require_admin(&env)?;
             .unwrap_or(CIRCUIT_BREAKER_RESET_LEDGERS)
     }
 
-    /// Immediately clear a tripped circuit breaker so that guarded withdrawal operations
-    /// can resume without waiting for the auto-reset window to expire.
-    ///
-    /// The circuit breaker halts withdrawals when rolling 24-hour outflow volume exceeds
-    /// the configured threshold. This function is the explicit admin escape-hatch: call it
-    /// after investigating the activity that caused the trip and confirming it is safe to
-    /// resume. It is the *only* way to clear the breaker when auto-reset is disabled
-    /// (`reset_window == u32::MAX`), and it is the fastest path in every other mode — there
-    /// is no need to wait for the ledger count to elapse.
-    ///
-    /// On success the function:
-    /// 1. Clears the tripped flag in instance storage so that all subsequent guarded
-    ///    withdrawal paths proceed normally.
-    /// 2. Always emits a [`CircuitBreakerResetEvent`] carrying the current ledger sequence,
-    ///    regardless of whether the breaker was tripped at the time of the call. This
-    ///    provides an unconditional audit trail for every admin-initiated reset.
-    ///
-    /// The ledger sequence at which the breaker originally tripped is intentionally
-    /// preserved in storage and is not cleared by this call. It remains available for
-    /// off-chain audit until the next trip overwrites it.
-    ///
-    /// # Parameters
-    ///
-    /// None. The caller is identified solely by Soroban auth; only the current admin
-    /// address may invoke this function.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success. Calling this function when the breaker is already clear is a
-    /// no-op — it succeeds silently and still emits [`CircuitBreakerResetEvent`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NotInitialized`] — the contract has not been initialised (no admin in
-    ///   instance storage). Call `init` first.
-    /// - Panics with a Soroban host auth error if the caller is not the current admin.
-    ///   Use [`Self::transfer_admin`] to inspect or change the admin address.
-    ///
-    /// # Notes
-    ///
-    /// - This function does not change the configured threshold or reset window. The
-    ///   breaker will trip again on the next withdrawal that breaches the same threshold.
-    ///   If the threshold needs to be raised or disabled, call
-    ///   [`Self::set_circuit_breaker_threshold`] separately.
-    /// - The rolling 24-hour withdrawal volume accumulator is **not** reset by this call.
-    ///   Volume already tracked in the current window still counts toward the threshold on
-    ///   the next withdrawal. To avoid an immediate re-trip, consider raising the threshold
-    ///   first, or waiting until the 24-hour window rolls over naturally.
-    /// - To check whether the breaker is currently tripped before calling, use
-    ///   [`Self::is_circuit_breaker_tripped`].
-    /// - To read the configured volume threshold, call
-    ///   [`Self::get_circuit_breaker_threshold`].
-    /// - To read or change the auto-reset window, call
-    ///   [`Self::get_circuit_breaker_reset_window`] or
-    ///   [`Self::set_circuit_breaker_reset_window`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // 1. Configure a threshold and trip the breaker.
-    /// bridge.set_circuit_breaker_threshold(&env, 1_000)?;
-    /// bridge.withdraw(&operator, &recipient, &1_001, &token)?;
-    /// assert!(bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 2. Subsequent withdrawals are blocked until the breaker is cleared.
-    /// let err = bridge.try_withdraw(&operator, &recipient, &1, &token).unwrap_err();
-    /// assert_eq!(err, Ok(Error::CircuitBreakerActive));
-    ///
-    /// // 3. After investigation, clear the breaker — emits CircuitBreakerResetEvent.
-    /// bridge.reset_circuit_breaker()?;
-    /// assert!(!bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 4. Guarded operations resume normally.
-    /// bridge.withdraw(&operator, &recipient, &1, &token)?;
-    /// ```
+    /// Clear a tripped circuit breaker immediately. Emits CircuitBreakerResetEvent.
+    /// Requires admin. Returns Error::NotInitialized if not initialized.
     pub fn reset_circuit_breaker(env: Env) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
         env.storage()
@@ -5011,74 +4441,7 @@ let admin = Self::require_admin(&env)?;
             .unwrap_or(0)
     }
 
-    /// Return whether the circuit breaker is currently tripped.
-    ///
-    /// This is the primary read-only probe for the circuit breaker's state. Use it to
-    /// gate off-chain alerting, drive monitoring dashboards, assert post-conditions in
-    /// integration tests, or verify state before deciding whether to call
-    /// [`Self::reset_circuit_breaker`].
-    ///
-    /// **Important:** this is a pure storage read — it reflects the persisted flag at
-    /// the moment of the call and does **not** evaluate whether the auto-reset window
-    /// has elapsed. If the breaker was tripped and the configured reset window has since
-    /// passed, this function still returns `true`. The flag is only cleared lazily: the
-    /// next guarded withdrawal path evaluates the window and auto-resets if eligible,
-    /// emitting [`CircuitBreakerAutoResetEvent`]. If you need an immediate clear without
-    /// waiting for a withdrawal, call [`Self::reset_circuit_breaker`] explicitly.
-    ///
-    /// # Parameters
-    ///
-    /// None. This is a read-only view function that requires no arguments and no
-    /// authentication.
-    ///
-    /// # Returns
-    ///
-    /// - `true` — the breaker is tripped; all guarded withdrawal paths will return
-    ///   [`Error::CircuitBreakerActive`] until the breaker is cleared (either by
-    ///   [`Self::reset_circuit_breaker`] or by the lazy auto-reset on the next
-    ///   guarded withdrawal after the window elapses).
-    /// - `false` — the breaker is clear, or has never been tripped (the storage key
-    ///   is absent and defaults to `false`).
-    ///
-    /// # Errors
-    ///
-    /// None. This function performs a plain instance-storage read, requires no auth,
-    /// and cannot panic.
-    ///
-    /// # Notes
-    ///
-    /// - Because auto-reset is lazy, a `true` return does not necessarily mean
-    ///   withdrawals are still blocked — if the reset window has elapsed, the next
-    ///   withdrawal call will clear the breaker automatically before proceeding.
-    ///   Do not use this function alone to determine whether a withdrawal will succeed.
-    /// - To clear a tripped breaker immediately, call [`Self::reset_circuit_breaker`].
-    /// - To read the auto-reset window that governs lazy clearing, call
-    ///   [`Self::get_circuit_breaker_reset_window`].
-    /// - To read or change the volume threshold that causes the breaker to trip, call
-    ///   [`Self::get_circuit_breaker_threshold`] or
-    ///   [`Self::set_circuit_breaker_threshold`].
-    /// - To change the auto-reset window, call [`Self::set_circuit_breaker_reset_window`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // 1. Before any threshold breach the breaker is clear.
-    /// assert!(!bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 2. A withdrawal that pushes rolling volume past the threshold trips it.
-    /// bridge.set_circuit_breaker_threshold(&env, 500)?;
-    /// bridge.withdraw(&operator, &recipient, &501, &token)?; // executes but trips
-    /// assert!(bridge.is_circuit_breaker_tripped());
-    ///
-    /// // 3. Even after the reset window elapses, the flag reads true until the
-    /// //    next guarded withdrawal triggers the lazy auto-reset.
-    /// env.ledger().set_sequence_number(env.ledger().sequence() + 34_561);
-    /// assert!(bridge.is_circuit_breaker_tripped()); // still true — no withdrawal yet
-    ///
-    /// // 4. A manual reset clears it immediately and emits CircuitBreakerResetEvent.
-    /// bridge.reset_circuit_breaker()?;
-    /// assert!(!bridge.is_circuit_breaker_tripped());
-    /// ```
+    /// Return whether the circuit breaker is currently tripped (pure storage read).
     pub fn is_circuit_breaker_tripped(env: Env) -> bool {
         env.storage()
             .instance()
