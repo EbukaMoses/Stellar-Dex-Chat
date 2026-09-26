@@ -2656,14 +2656,19 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
     /// * `env` – The Soroban host environment.
     /// * `address` – Target address to deny.
     ///
+    /// Denying an address that is already denied is a no-op: no index entry is
+    /// appended and no event is emitted (Issue #1405).
+    ///
     /// # Errors
     /// * [`Error::MaxDeniedReached`] – If denylist capacity reaches `u64::MAX`.
     /// * [`Error::Overflow`] – If counter increment overflows `u64`.
     pub fn deny_address(env: Env, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Denied(address.clone()), &true);
+        let denied_key = DataKey::Denied(address.clone());
+        if env.storage().persistent().has(&denied_key) {
+            return Ok(());
+        }
+        env.storage().persistent().set(&denied_key, &true);
 
         // Append to denied-address index for enumeration
         let count: u64 = env
@@ -3008,11 +3013,15 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         Ok(())
     }
 
+    /// Removes an address from the denylist and tombstones its index slot.
+    /// Removing an address that is not denied is a no-op and emits no event.
     pub fn remove_denied_address(env: Env, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::Denied(address.clone()));
+        let denied_key = DataKey::Denied(address.clone());
+        if !env.storage().persistent().has(&denied_key) {
+            return Ok(());
+        }
+        env.storage().persistent().remove(&denied_key);
 
         // Tombstone the index slot (mark as None) without compacting
         let count: u64 = env
