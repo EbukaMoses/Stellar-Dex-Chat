@@ -17,7 +17,6 @@ import { stroopsToDisplay } from '@/lib/stellarContract';
 import SkeletonHeader from '@/components/ui/skeleton/SkeletonHeader';
 import SkeletonPayout from '@/components/ui/skeleton/SkeletonPayout';
 import CopyButton from '@/components/ui/CopyButton';
-import ConfirmDestructiveActionDialog from '@/components/ui/ConfirmDestructiveActionDialog';
 import {
   AreaChart,
   Area,
@@ -147,8 +146,6 @@ export default function AdminDashboard() {
   const [optimisticPage, setOptimisticPage] = useState<number | null>(null);
   const [optimisticFilter, setOptimisticFilter] = useState<string | null>(null);
   const [optimisticExportSuccess, setOptimisticExportSuccess] = useState(false);
-  const [isClearLogsDialogOpen, setIsClearLogsDialogOpen] = useState(false);
-  const [isClearingLogs, setIsClearingLogs] = useState(false);
   const enableAdminReconciliation = useFeatureFlag('enableAdminReconciliation');
   const chartColors = useChartColors();
 
@@ -321,26 +318,6 @@ export default function AdminDashboard() {
     setActionFilter(newFilter);
     setAuditPage(1);
     fetchAuditLogs(1, newFilter, true);
-  };
-
-  const handleClearAuditLogs = async () => {
-    setIsClearingLogs(true);
-    try {
-      const response = await fetch('/api/admin/audit-log', {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to clear audit logs (${response.status})`);
-      }
-      setIsClearLogsDialogOpen(false);
-      await fetchAuditLogs(1, actionFilter);
-    } catch (error) {
-      setAuditError(
-        error instanceof Error ? error.message : 'Failed to clear audit logs',
-      );
-    } finally {
-      setIsClearingLogs(false);
-    }
   };
 
   const totalVolume = metrics.reduce((acc, curr) => acc + curr.volume, 0);
@@ -627,35 +604,9 @@ export default function AdminDashboard() {
                           ? 'Exporting...'
                           : 'Export CSV'}
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsClearLogsDialogOpen(true)}
-                      disabled={auditLoading || auditTotal === 0}
-                      className="h-10 mt-0 sm:mt-5 px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed text-white"
-                      style={{ backgroundColor: 'var(--color-danger)' }}
-                      aria-label="Clear all audit log entries"
-                    >
-                      Clear Audit Logs
-                    </button>
                   </div>
                 </div>
               </div>
-
-              <ConfirmDestructiveActionDialog
-                isOpen={isClearLogsDialogOpen}
-                onClose={() => setIsClearLogsDialogOpen(false)}
-                onConfirm={handleClearAuditLogs}
-                actionName="Clear Audit Logs"
-                description="Permanently deletes every audit log entry currently stored for this admin dashboard."
-                consequences={[
-                  'All audit history will be permanently lost.',
-                  'This action cannot be reversed or recovered.',
-                ]}
-                requireTypedConfirmation
-                confirmLabel="Clear Logs"
-                isConfirming={isClearingLogs}
-              />
 
               {auditError && (
                 <div
