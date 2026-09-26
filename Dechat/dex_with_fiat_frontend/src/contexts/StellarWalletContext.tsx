@@ -93,7 +93,7 @@ const defaultConnection: StellarWalletConnection = {
   networkPassphrase: '',
 };
 
-const StellarWalletContext = createContext<
+export const StellarWalletContext = createContext<
   StellarWalletContextType | undefined
 >(undefined);
 
