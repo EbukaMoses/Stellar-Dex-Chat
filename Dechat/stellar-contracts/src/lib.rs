@@ -5326,3 +5326,5 @@ mod test_require_admin_and_denylist;
 #[cfg(test)]
 mod test_withdraw_queue_helpers;
 
+#[cfg(test)]
+mod test_denylist_invariants;
