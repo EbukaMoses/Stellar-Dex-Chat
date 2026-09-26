@@ -1,0 +1,28 @@
+name: Lint Repo
+
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for conflict markers
+        run: |
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- ":(exclude).github/workflows/lint-repo.yml" ":(exclude).husky/pre-commit" ":(exclude)scripts/check-conflict-markers.sh"; then
+            echo "❌ Conflict markers found in the repository!"
+            exit 1
+          fi
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@ee28dc79d2c7e07b6a9c8abcf817194ab959c473 # v1.44.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-check
+          filter_mode: nofilter
+          fail_on_error: true

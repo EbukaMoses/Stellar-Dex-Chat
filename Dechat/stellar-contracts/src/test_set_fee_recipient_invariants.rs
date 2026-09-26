@@ -182,6 +182,32 @@ fn set_fee_recipient_emits_event() {
     assert!(!events.events().is_empty());
 }
 
+#[test]
+fn set_fee_recipient_rejects_contract_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let fx = setup_bridge(&env);
+
+    assert_eq!(
+        fx.bridge.try_set_fee_recipient(&fx.contract_id),
+        Err(Ok(Error::InvalidRecipient))
+    );
+}
+
+#[test]
+fn clear_fee_recipient_removes_value_and_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let fx = setup_bridge(&env);
+    let recipient = Address::generate(&env);
+
+    fx.bridge.set_fee_recipient(&recipient);
+    assert_eq!(fx.bridge.get_fee_recipient(), Some(recipient.clone()));
+
+    fx.bridge.clear_fee_recipient();
+    assert_eq!(fx.bridge.get_fee_recipient(), None);
+}
+
 // ── Failure paths ─────────────────────────────────────────────────────────
 
 #[test]
