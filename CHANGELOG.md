@@ -1162,6 +1162,8 @@ Repo Avatar
 - Reject merge-conflict markers and lint workflow YAML with actionlint before merge
 - **changelog:** Update changelog [skip ci]
 - **contract:** Consolidate nonce sites, fix fee-withdrawal nonce bug, remove view-function events and telemetry
+- **changelog:** Update changelog [skip ci]
+- **contract:** Admin/denylist helpers, shared withdraw-queue helpers, extend ConfigSnapshot, repo cleanup
 
 ### Deprecated
 
