@@ -3241,6 +3241,39 @@ fn test_get_receipt_by_index_valid() {
 }
 
 #[test]
+fn test_get_receipt_by_index_preserves_order_and_bounds_invariants() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, bridge, _, token_addr, _, token_sac) = setup_bridge(&env, 10_000);
+    let user = Address::generate(&env);
+    token_sac.mint(&user, &10_000);
+    let expected_amounts = [125i128, 250, 500, 1_000];
+
+    for amount in expected_amounts {
+        bridge.deposit(&user, &amount, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    }
+
+    for (index, expected_amount) in expected_amounts.iter().enumerate() {
+        let receipt = bridge.get_receipt_by_index(&(index as u64));
+        assert_eq!(receipt.amount, *expected_amount);
+        assert_eq!(
+            bridge.get_receipt_by_index(&(index as u64)).amount,
+            *expected_amount
+        );
+    }
+
+    assert_eq!(
+        bridge.try_get_receipt_by_index(&(expected_amounts.len() as u64)),
+        Ok(Ok(None))
+    );
+    assert_eq!(
+        bridge.try_get_receipt_by_index(&u64::MAX),
+        Ok(Ok(None))
+    );
+}
+
+#[test]
 fn test_get_receipt_by_index_out_of_range() {
     let env = Env::default();
     env.mock_all_auths();

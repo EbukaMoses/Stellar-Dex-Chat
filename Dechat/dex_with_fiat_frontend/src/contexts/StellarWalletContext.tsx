@@ -33,6 +33,7 @@ declare global {
       getAccounts?: () => Promise<{ accounts: string[]; error?: string }>;
       setAllowedBack?: (address: string) => Promise<void>;
     };
+    /** Test-only bridge, registered only for E2E or non-production builds. */
     mockStellarConnect?: (address: string) => void;
   }
 }
@@ -81,7 +82,7 @@ interface StellarWalletContextType {
   error: string | null;
   sessionExpired: boolean;
   clearSessionExpired: () => void;
-  mockConnect: (address: string) => void;
+  mockConnect?: (address: string) => void;
   isNetworkMismatch: boolean;
 }
 
@@ -98,6 +99,9 @@ export const StellarWalletContext = createContext<
 >(undefined);
 
 export function StellarWalletProvider({ children }: { children: ReactNode }) {
+  const mockWalletEnabled =
+    process.env.NEXT_PUBLIC_E2E === 'true' ||
+    process.env.NODE_ENV !== 'production';
   const [connection, setConnection] =
     useState<StellarWalletConnection>(defaultConnection);
   const [accounts, setAccounts] = useState<WalletAccount[]>([]);
@@ -165,7 +169,9 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
               network: netResult.network || 'TESTNET',
               networkPassphrase: netResult.networkPassphrase || '',
             });
-            fetchXlmBalance(addrResult.address).then(setXlmBalance).catch(() => {});
+            fetchXlmBalance(addrResult.address)
+              .then(setXlmBalance)
+              .catch(() => {});
           }
         })
         .catch(() => {});
@@ -223,7 +229,9 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
         network: netResult.network || 'TESTNET',
         networkPassphrase: passphrase,
       });
-      fetchXlmBalance(addr).then(setXlmBalance).catch(() => {});
+      fetchXlmBalance(addr)
+        .then(setXlmBalance)
+        .catch(() => {});
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to connect Freighter',
@@ -272,7 +280,9 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
         }));
         localStorage.setItem(STORAGE_KEY_ADDRESS, selectedAccount.address);
         localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()));
-        fetchXlmBalance(selectedAccount.address).then(setXlmBalance).catch(() => {});
+        fetchXlmBalance(selectedAccount.address)
+          .then(setXlmBalance)
+          .catch(() => {});
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to switch account',
@@ -300,10 +310,14 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.mockStellarConnect = mockConnect;
-    }
-  }, [mockConnect]);
+    if (!mockWalletEnabled || typeof window === 'undefined') return;
+    window.mockStellarConnect = mockConnect;
+    return () => {
+      if (window.mockStellarConnect === mockConnect) {
+        delete window.mockStellarConnect;
+      }
+    };
+  }, [mockConnect, mockWalletEnabled]);
 
   const isNetworkMismatch =
     connection.isConnected &&
@@ -325,7 +339,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       error,
       sessionExpired,
       clearSessionExpired,
-      mockConnect,
+      ...(mockWalletEnabled ? { mockConnect } : {}),
       isNetworkMismatch,
     }),
     [
@@ -343,6 +357,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       sessionExpired,
       clearSessionExpired,
       mockConnect,
+      mockWalletEnabled,
       isNetworkMismatch,
     ],
   );

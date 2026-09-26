@@ -15,6 +15,10 @@ import type {
 
 const PAYSTACK_SECRET_KEY = env.PAYSTACK_SECRET_KEY;
 
+export function toKobo(amountNgn: number): number {
+  return Math.round(amountNgn * 100);
+}
+
 function paystackHeaders() {
   return {
     Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
@@ -137,7 +141,7 @@ export const paystackProvider: PayoutProvider = {
 
     const transferData = {
       source: input.source,
-      amount: input.amount * 100,
+      amount: toKobo(input.amount),
       recipient: input.recipient,
       reason: input.reason || 'Crypto withdrawal',
       reference: input.reference,

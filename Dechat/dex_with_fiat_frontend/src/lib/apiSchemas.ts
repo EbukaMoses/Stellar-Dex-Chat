@@ -12,10 +12,21 @@ export const createRecipientSchema = z.object({
 export type CreateRecipientInput = z.infer<typeof createRecipientSchema>;
 
 // Schema for initiate-transfer endpoint
+export const MAX_TRANSFER_AMOUNT_NGN = 10_000_000;
+
 export const initiateTransferSchema = z.object({
   source: z.string().min(1, 'Source is required'),
   reason: z.string().optional(),
-  amount: z.number().positive('Amount must be positive'),
+  amount: z
+    .number()
+    .positive('Amount must be positive')
+    .max(MAX_TRANSFER_AMOUNT_NGN, 'Amount exceeds the transfer limit')
+    .refine(
+      (amount) =>
+        Math.abs(amount * 100 - Math.round(amount * 100)) <=
+        Number.EPSILON * Math.max(1, Math.abs(amount * 100)) * 4,
+      'Amount must have at most 2 decimal places',
+    ),
   recipient: z.string().min(1, 'Recipient is required'),
   reference: z.string().optional(),
 });
@@ -153,11 +164,12 @@ function calculateBackoffDelay(
   config: Required<RetryConfig>,
 ): number {
   // Exponential backoff: initialDelay * (multiplier ^ attempt)
-  const exponentialDelay = config.initialDelayMs * Math.pow(config.backoffMultiplier, attempt);
-  
+  const exponentialDelay =
+    config.initialDelayMs * Math.pow(config.backoffMultiplier, attempt);
+
   // Add jitter (±25%) to avoid thundering herd
   const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
-  
+
   // Cap at max delay
   return Math.min(config.maxDelayMs, exponentialDelay + jitter);
 }
@@ -184,8 +196,10 @@ export async function withRetry<T>(
   const mergedConfig: Required<RetryConfig> = {
     ...DEFAULT_RETRY_CONFIG,
     ...config,
-    retryableStatusCodes: config.retryableStatusCodes ?? DEFAULT_RETRY_CONFIG.retryableStatusCodes,
-    retryableErrors: config.retryableErrors ?? DEFAULT_RETRY_CONFIG.retryableErrors,
+    retryableStatusCodes:
+      config.retryableStatusCodes ?? DEFAULT_RETRY_CONFIG.retryableStatusCodes,
+    retryableErrors:
+      config.retryableErrors ?? DEFAULT_RETRY_CONFIG.retryableErrors,
   };
 
   let lastError: unknown;
@@ -208,9 +222,9 @@ export async function withRetry<T>(
         error instanceof Response
           ? mergedConfig.retryableStatusCodes.includes(error.status)
           : error instanceof Error &&
-              mergedConfig.retryableStatusCodes.includes(
-                (error as HttpError).status ?? 0,
-              );
+            mergedConfig.retryableStatusCodes.includes(
+              (error as HttpError).status ?? 0,
+            );
 
       if (!isRetryableError && !isRetryableStatus) {
         throw error; // Non-retryable error, throw immediately
@@ -241,7 +255,7 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   return withRetry(async () => {
     const response = await fetch(url, options);
-    
+
     if (!response.ok) {
       // Throw error to trigger retry for non-OK responses
       const error: HttpError = Object.assign(
@@ -250,7 +264,7 @@ export async function fetchWithRetry(
       );
       throw error;
     }
-    
+
     return response;
   }, config);
 }
