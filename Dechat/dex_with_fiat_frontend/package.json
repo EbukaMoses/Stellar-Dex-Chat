@@ -23,7 +23,8 @@
     "test:coverage:shard:3": "vitest run --coverage --maxWorkers=1 --pool=forks --no-file-parallelism --reporter=blob --reporter=dot --coverage.reporter=json --shard=3/4 --coverage.clean=false",
     "test:coverage:shard:4": "vitest run --coverage --maxWorkers=1 --pool=forks --no-file-parallelism --reporter=blob --reporter=dot --coverage.reporter=json --shard=4/4 --coverage.clean=false",
     "test:coverage:merge": "vitest run --mergeReports --coverage --reporter=default",
-    "test:coverage": "pnpm test:coverage:shard:1 && pnpm test:coverage:shard:2 && pnpm test:coverage:shard:3 && pnpm test:coverage:shard:4 && pnpm test:coverage:merge"
+    "test:coverage": "pnpm test:coverage:shard:1 && pnpm test:coverage:shard:2 && pnpm test:coverage:shard:3 && pnpm test:coverage:shard:4 && pnpm test:coverage:merge",
+    "validate:env": "tsx scripts/validate-env-example.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

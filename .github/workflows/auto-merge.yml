@@ -22,7 +22,6 @@ on:
   workflow_run:
     workflows:
       - "Frontend CI"
-      - "Frontend Build Check"
       - "Smart Contract CI"
     types: [completed]
   # Safety net: re-sweep periodically so a PR whose triggering event was missed

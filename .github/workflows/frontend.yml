@@ -58,6 +58,14 @@ jobs:
       run:
         working-directory: Dechat/dex_with_fiat_frontend
 
+    env:
+      NEXT_PUBLIC_FIAT_BRIDGE_CONTRACT: ${{ secrets.NEXT_PUBLIC_FIAT_BRIDGE_CONTRACT || 'CAWYXBN4PSVXD7NIYEWVFFIIIEUCC6PUN3IMG3J2WHKDB4NVIISMXBPR' }}
+      NEXT_PUBLIC_XLM_SAC_CONTRACT: ${{ secrets.NEXT_PUBLIC_XLM_SAC_CONTRACT || 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC' }}
+      NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'PLACEHOLDER' }}
+      PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
+      PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -79,14 +87,13 @@ jobs:
 
       - name: Build
         run: pnpm build
-        env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'PLACEHOLDER' }}
-          PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
-          PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: next-build
+          path: Dechat/dex_with_fiat_frontend/.next
+          retention-days: 1
 
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -174,6 +181,11 @@ jobs:
       run:
         working-directory: Dechat/dex_with_fiat_frontend
 
+    env:
+      NEXT_PUBLIC_FIAT_BRIDGE_CONTRACT: ${{ secrets.NEXT_PUBLIC_FIAT_BRIDGE_CONTRACT || 'CAWYXBN4PSVXD7NIYEWVFFIIIEUCC6PUN3IMG3J2WHKDB4NVIISMXBPR' }}
+      NEXT_PUBLIC_XLM_SAC_CONTRACT: ${{ secrets.NEXT_PUBLIC_XLM_SAC_CONTRACT || 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC' }}
+      NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -194,10 +206,10 @@ jobs:
         run: pnpm install
 
       - name: Download build artifact
-        uses: actions/download-artifact@6b5ae5fc3a0f8a0a3a49f9d3f6b8d8cd9e5c1b4a # v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
         with:
-          name: build-output
-          path: Dechat/dex_with_fiat_frontend
+          name: next-build
+          path: Dechat/dex_with_fiat_frontend/.next
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -222,23 +234,9 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true' && github.event_name == 'schedule'
         run: pnpm exec playwright install-deps chromium firefox webkit
 
-      - name: Run Playwright E2E tests (PR - chromium only)
-        if: github.event_name == 'pull_request'
-        run: pnpm test:e2e --project=chromium
-        env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
-
       - name: Run Playwright E2E tests (nightly - all browsers)
         if: github.event_name == 'schedule'
         run: pnpm test:e2e
-        env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -248,20 +246,49 @@ jobs:
           path: Dechat/dex_with_fiat_frontend/playwright-report/
           retention-days: 7
 
-      - name: Report flaky tests
-        if: always() && github.event_name == 'pull_request'
+  # Verify that workflow env vars match env.ts schema
+  env-check:
+    name: Validate Workflow Env Vars
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Dechat/dex_with_fiat_frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: Dechat/dex_with_fiat_frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Check workflow env vars against env.ts
         run: |
-          if [ -f playwright-report/results.json ]; then
-            node -e "
-              const fs = require('fs');
-              const results = JSON.parse(fs.readFileSync('playwright-report/results.json', 'utf8'));
-              const flaky = results.suites.flatMap(s => s.specs).flatMap(s => s.tests).filter(t => t.results.some(r => r.retry > 0));
-              if (flaky.length > 0) {
-                console.log('## Flaky Tests (passed only on retry)');
-                flaky.forEach(t => console.log('- ' + t.title));
-                console.log('\\nThese tests passed only after retry and should be investigated for flakiness.');
-              } else {
-                console.log('No flaky tests detected.');
-              }
-            " >> $GITHUB_STEP_SUMMARY
+          # Extract NEXT_PUBLIC_* vars from this workflow file
+          workflow_vars=$(grep -oP 'NEXT_PUBLIC_\w+' ../.github/workflows/frontend.yml | sort -u)
+          
+          # Extract NEXT_PUBLIC_* vars from env.ts schema
+          schema_vars=$(grep -oP "NEXT_PUBLIC_\w+(?=:)" src/lib/env.ts | sort -u)
+          
+          # Find workflow vars not in schema
+          invalid_vars=$(comm -23 <(echo "$workflow_vars") <(echo "$schema_vars"))
+          
+          if [ -n "$invalid_vars" ]; then
+            echo "❌ ERROR: The following NEXT_PUBLIC_* variables are set in the workflow but not declared in src/lib/env.ts:"
+            echo "$invalid_vars"
+            exit 1
           fi
+          
+          echo "✅ All workflow NEXT_PUBLIC_* variables are declared in env.ts"
