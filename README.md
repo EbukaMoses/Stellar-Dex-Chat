@@ -28,7 +28,7 @@ For detailed installation instructions, architecture overview, and development s
 - pnpm
 - Rust & Cargo tooling with `wasm32-unknown-unknown` target
 - Stellar CLI (for interacting with Soroban)
-- Docker & Docker Compose (optional, for quick start)
+- Docker & Docker Compose (optional, for quick start).
 
 ### Fastest Start (Docker)
 
