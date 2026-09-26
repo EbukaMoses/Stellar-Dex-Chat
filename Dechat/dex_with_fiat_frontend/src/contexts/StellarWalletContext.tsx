@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   ReactNode,
 } from 'react';
 import {
@@ -71,7 +72,7 @@ interface StellarWalletContextType {
   accounts: WalletAccount[];
   selectedAccountIndex: number;
   xlmBalance: string;
-  selectAccount: (index: number) => void;
+  selectAccount: (index: number) => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => void;
   signTx: (xdr: string) => Promise<string>;
@@ -92,7 +93,7 @@ const defaultConnection: StellarWalletConnection = {
   networkPassphrase: '',
 };
 
-const StellarWalletContext = createContext<
+export const StellarWalletContext = createContext<
   StellarWalletContextType | undefined
 >(undefined);
 
@@ -309,26 +310,45 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
     connection.network !== '' &&
     connection.network.toUpperCase() !== EXPECTED_NETWORK;
 
+  const contextValue = useMemo(
+    () => ({
+      connection,
+      accounts,
+      selectedAccountIndex,
+      xlmBalance,
+      selectAccount,
+      connect,
+      disconnect,
+      signTx,
+      isFreighterInstalled,
+      isLoading,
+      error,
+      sessionExpired,
+      clearSessionExpired,
+      mockConnect,
+      isNetworkMismatch,
+    }),
+    [
+      connection,
+      accounts,
+      selectedAccountIndex,
+      xlmBalance,
+      selectAccount,
+      connect,
+      disconnect,
+      signTx,
+      isFreighterInstalled,
+      isLoading,
+      error,
+      sessionExpired,
+      clearSessionExpired,
+      mockConnect,
+      isNetworkMismatch,
+    ],
+  );
+
   return (
-    <StellarWalletContext.Provider
-      value={{
-        connection,
-        accounts,
-        selectedAccountIndex,
-        xlmBalance,
-        selectAccount,
-        connect,
-        disconnect,
-        signTx,
-        isFreighterInstalled,
-        isLoading,
-        error,
-        sessionExpired,
-        clearSessionExpired,
-        mockConnect,
-        isNetworkMismatch,
-      }}
-    >
+    <StellarWalletContext.Provider value={contextValue}>
       {children}
     </StellarWalletContext.Provider>
   );

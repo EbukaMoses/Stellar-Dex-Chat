@@ -120,20 +120,21 @@ vi.mock('@/lib/stellarContract', () => ({
 vi.mock('@/components/ChatHistorySidebar', () => ({ default: () => null }));
 vi.mock('@/components/ChatInput', () => ({ default: () => null }));
 vi.mock('@/components/ChatMessages', () => ({ default: () => null }));
-vi.mock('@/components/StellarFiatModal', () => ({ default: () => null }));
-vi.mock('@/components/BankDetailsModal', () => ({ default: () => null }));
-vi.mock('@/components/UserSettings', () => ({ default: () => null }));
 vi.mock('@/components/WalletConnectionTimeline', () => ({ default: () => null }));
 vi.mock('@/components/ReceiptDrawerWrapper', () => ({ default: () => null }));
-vi.mock('@/components/SplitViewComparison', () => ({ default: () => null }));
-vi.mock('@/components/ChatSearchPanel', () => ({ default: () => null }));
 vi.mock('@/components/ui/skeleton/SkeletonChat', () => ({ default: () => null }));
 vi.mock('@/components/ui/skeleton/SkeletonSidebar', () => ({ default: () => null }));
-vi.mock('@/components/NotificationsCenter', () => ({
+vi.mock('@/components/NotificationsCenterWrapper', () => ({
   default: function NotificationsBoom() {
     throw new Error('notifications test throw');
   },
 }));
+vi.mock('@/components/StellarFiatModalWrapper', () => ({ default: () => null }));
+vi.mock('@/components/BankDetailsModalWrapper', () => ({ default: () => null }));
+vi.mock('@/components/UserSettingsWrapper', () => ({ default: () => null }));
+vi.mock('@/components/SplitViewComparisonWrapper', () => ({ default: () => null }));
+vi.mock('@/components/ChatSearchPanelWrapper', () => ({ default: () => null }));
+vi.mock('@/components/NetworkStatusModalWrapper', () => ({ default: () => null }));
 
 describe('StellarChatInterface', () => {
   beforeEach(() => {

@@ -99,6 +99,7 @@ export default function StellarFiatModal({
   const [requiresPreSignConfirmation, setRequiresPreSignConfirmation] =
     useState(false);
   const [isLoadingFee, setIsLoadingFee] = useState(false);
+  const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
   const [status, setStatus] = useState<TxStatus>('idle');
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -295,9 +296,10 @@ export default function StellarFiatModal({
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     setIsLoadingFee(true);
 
-    const simulate = async () => {
+    const timer = setTimeout(async () => {
       try {
         let estimate: FeeEstimate | null = null;
         if (isAdminMode) {
@@ -327,11 +329,11 @@ export default function StellarFiatModal({
           setIsLoadingFee(false);
         }
       }
-    };
+    }, 300);
 
-    const timer = setTimeout(simulate, 500);
     return () => {
       cancelled = true;
+      abortController.abort();
       clearTimeout(timer);
     };
   }, [
@@ -687,22 +689,28 @@ export default function StellarFiatModal({
             <button
               type="button"
               data-testid="download-receipt-button"
-              onClick={() =>
-                downloadReceipt({
-                  txHash,
-                  amount: stroopsToDisplay(stroopsAmount ?? BigInt(0)),
-                  wallet: connection.publicKey,
-                  network: connection.network || 'TESTNET',
-                  timestamp: new Date().toLocaleString(),
-                  type: isAdminMode ? 'Withdrawal' : 'Deposit',
-                  note: note.trim() || undefined,
-                  messages,
-                })
-              }
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors text-sm font-medium"
+              onClick={async () => {
+                setIsDownloadingReceipt(true);
+                try {
+                  await downloadReceipt({
+                    txHash,
+                    amount: stroopsToDisplay(stroopsAmount ?? BigInt(0)),
+                    wallet: connection.publicKey,
+                    network: connection.network || 'TESTNET',
+                    timestamp: new Date().toLocaleString(),
+                    type: isAdminMode ? 'Withdrawal' : 'Deposit',
+                    note: note.trim() || undefined,
+                    messages,
+                  });
+                } finally {
+                  setIsDownloadingReceipt(false);
+                }
+              }}
+              disabled={isDownloadingReceipt}
+              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-4 h-4" />
-              Download Receipt
+              {isDownloadingReceipt ? 'Generating...' : 'Download Receipt'}
             </button>
 
             {!isAdminMode && onDepositSuccess ? (

@@ -3,15 +3,31 @@ import * as Sentry from '@sentry/nextjs';
 import { getPayoutProvider } from '@/lib/payout/providers/registry';
 import { telemetry } from '@/lib/telemetry';
 import { applyRateLimit, getClientIp } from '@/lib/rateLimit';
-import { setTransferStatus } from '@/lib/transferStore';
+import { setTransferStatus, getTransferStatus } from '@/lib/transferStore';
 import { initiateTransferSchema } from '@/lib/apiSchemas';
 
 const RATE_LIMIT = { maxRequests: 3, windowMs: 60_000 };
+
+const idempotencyCache = new Map<string, { result: unknown; timestamp: number }>();
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   const limited = applyRateLimit(ip, '/api/initiate-transfer', RATE_LIMIT);
   if (limited) return limited;
+
+  const idempotencyKey = request.headers.get('X-Idempotency-Key');
+  if (!idempotencyKey) {
+    return NextResponse.json(
+      { success: false, message: 'X-Idempotency-Key header is required' },
+      { status: 400 },
+    );
+  }
+
+  const cached = idempotencyCache.get(idempotencyKey);
+  if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
+    return NextResponse.json({ success: true, data: cached.result });
+  }
 
   const traceContext = telemetry.extractTraceFromHeaders(request.headers);
   const span = telemetry.createSpan(
@@ -62,8 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { source, reason, amount, recipient, reference } =
-      validationResult.data;
+    const { source, reason, amount, recipient } = validationResult.data;
     // `clientSessionId` isn't part of initiateTransferSchema, so it's read
     // from the raw (already-validated-as-an-object) body instead of
     // validationResult.data.
@@ -86,15 +101,13 @@ export async function POST(request: NextRequest) {
       reason,
       amount,
       recipient,
-      reference,
+      reference: idempotencyKey,
     });
 
     const transferReference =
       typeof data.reference === 'string' && data.reference
         ? data.reference
-        : typeof reference === 'string' && reference
-          ? reference
-          : '';
+        : idempotencyKey;
 
     if (transferReference) {
       setTransferStatus({
@@ -105,6 +118,8 @@ export async function POST(request: NextRequest) {
         clientSessionId,
       });
     }
+
+    idempotencyCache.set(idempotencyKey, { result: data, timestamp: Date.now() });
 
     return NextResponse.json({
       success: true,

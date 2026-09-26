@@ -31,22 +31,13 @@ import useBridgeStats from '@/hooks/useBridgeStats';
 import useChat from '@/hooks/useChat';
 import { useDeepLink } from '@/hooks/useDeepLink';
 import { getQueuedReadRequestsCount } from '@/lib/networkQueue';
-import {
-  getAdmin,
-  getWithdrawalQueueDepth,
-  stroopsToDisplay,
-} from '@/lib/stellarContract';
+import { stroopsToDisplay } from '@/lib/stellarContract';
 import { usePaystackWebhookStatus } from '@/hooks/usePaystackWebhookStatus';
 import { TransactionData } from '@/types';
-import BankDetailsModal from './BankDetailsModal';
 import ChatHistorySidebar from './ChatHistorySidebar';
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
 import ErrorBoundary from './ErrorBoundary';
-import NetworkStatusModal from './NetworkStatusModal';
-import NotificationsCenter from './NotificationsCenter';
-import StellarFiatModal from './StellarFiatModal';
-import UserSettings from './UserSettings';
 import WalletConnectionTimeline from './WalletConnectionTimeline';
 import { useTranslation } from '@/contexts/TranslationContext';
 import ReceiptDrawer from './ReceiptDrawerWrapper';
@@ -57,8 +48,13 @@ import { useWatchlist } from '@/hooks/useWatchlist';
 import { useWatchedWalletNotifications } from '@/hooks/useWatchedWalletNotifications';
 import { subscribeToQueue, processQueue } from '@/lib/networkQueue';
 import CopyButton from '@/components/ui/CopyButton';
-import SplitViewComparison from './SplitViewComparison';
-import ChatSearchPanel from './ChatSearchPanel';
+import SplitViewComparisonWrapper from './SplitViewComparisonWrapper';
+import ChatSearchPanelWrapper from './ChatSearchPanelWrapper';
+import BankDetailsModalWrapper from './BankDetailsModalWrapper';
+import StellarFiatModalWrapper from './StellarFiatModalWrapper';
+import UserSettingsWrapper from './UserSettingsWrapper';
+import NetworkStatusModalWrapper from './NetworkStatusModalWrapper';
+import NotificationsCenterWrapper from './NotificationsCenterWrapper';
 
 /** Possible states for the API health badge */
 type HealthStatus = 'checking' | 'ok' | 'degraded';
@@ -257,6 +253,7 @@ function StellarChatInterfaceContent() {
       if (connection.isConnected && connection.address) {
         try {
           // Fetch truth directly from the blockchain
+          const { getAdmin } = await import('@/lib/stellarContract');
           const adminAddr = await getAdmin();
           setIsAdmin(adminAddr === connection.address);
         } catch (err: unknown) {
@@ -283,6 +280,7 @@ function StellarChatInterfaceContent() {
 
     const pollQueueDepth = async () => {
       try {
+        const { getWithdrawalQueueDepth } = await import('@/lib/stellarContract');
         const depth = await getWithdrawalQueueDepth();
         if (!cancelled) {
           setWithdrawalQueueDepth(depth);
@@ -613,7 +611,7 @@ function StellarChatInterfaceContent() {
                 <Plus className="w-5 h-5" />
               </button>
 
-              <NotificationsCenter />
+              <NotificationsCenterWrapper />
 
               {/* Search history */}
               <button
@@ -719,8 +717,8 @@ function StellarChatInterfaceContent() {
                             className={`flex items-center gap-1 px-1.5 py-1 ${idx === selectedAccountIndex ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600') : ''}`}
                           >
                             <button
-                              onClick={() => {
-                                selectAccount(idx);
+                              onClick={async () => {
+                                await selectAccount(idx);
                                 setShowAccountDropdown(false);
                               }}
                               className={`flex-1 flex items-center gap-2 px-1.5 py-1 text-xs rounded transition-colors ${idx === selectedAccountIndex ? '' : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
@@ -1038,12 +1036,12 @@ function StellarChatInterfaceContent() {
         )}
 
         {/* Split-view comparison overlay */}
-        <SplitViewComparison splitView={splitView} sessions={sessions} />
+        <SplitViewComparisonWrapper splitView={splitView} sessions={sessions} />
 
         {/* Search panel — slide-over on the right */}
         {showSearch && (
           <div className="fixed inset-y-0 right-0 z-40 w-80 shadow-2xl flex flex-col">
-            <ChatSearchPanel
+            <ChatSearchPanelWrapper
               sessions={sessions}
               onSelectResult={(sessionId: string) => {
                 loadChatSession(sessionId);
@@ -1055,7 +1053,7 @@ function StellarChatInterfaceContent() {
         )}
 
         {/* Deposit / Withdraw Modal */}
-        <StellarFiatModal
+        <StellarFiatModalWrapper
           isOpen={showModal}
           onClose={() => {
             setShowModal(false);
@@ -1070,20 +1068,20 @@ function StellarChatInterfaceContent() {
         />
 
         {/* Bank details & fiat payout modal */}
-        <BankDetailsModal
+        <BankDetailsModalWrapper
           isOpen={showBankDetails}
           onClose={() => setShowBankDetails(false)}
           xlmAmount={bankDetailsXlmAmount}
         />
 
         {/* Settings panel */}
-        <UserSettings
+        <UserSettingsWrapper
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
         />
 
         {/* Network status modal (issue #1030) */}
-        <NetworkStatusModal
+        <NetworkStatusModalWrapper
           isOpen={showNetworkStatusModal}
           onClose={() => setShowNetworkStatusModal(false)}
         />

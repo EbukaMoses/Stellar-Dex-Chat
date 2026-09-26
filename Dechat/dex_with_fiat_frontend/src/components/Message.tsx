@@ -12,6 +12,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import { toDate } from '@/lib/messageUtils';
+import { BLOCKED_URL, sanitizeUrl } from '@/lib/markdownSanitizer';
 import { MAX_AUTO_RETRIES, useMessageRetry } from '@/hooks/useMessageRetry';
 import { useTranslation } from '@/contexts/TranslationContext';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -125,16 +126,29 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
       h3: ({ children }) => (
         <h3 className="text-sm font-bold mb-1">{children}</h3>
       ),
-      a: ({ href, children }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:underline"
-        >
-          {children}
-        </a>
-      ),
+      // `urlTransform={sanitizeUrl}` (below) rewrites every unsafe href/src to
+      // BLOCKED_URL before it reaches these renderers, so a blocked link or
+      // image is shown as plain text rather than something clickable (#1498).
+      a: ({ href, children }) =>
+        !href || href === BLOCKED_URL ? (
+          <span>{children}</span>
+        ) : (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:underline"
+          >
+            {children}
+          </a>
+        ),
+      img: ({ src, alt }) =>
+        typeof src !== 'string' || !src || src === BLOCKED_URL ? (
+          <span>{alt}</span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt={alt ?? ''} />
+        ),
     }),
     [isDarkMode],
   );
@@ -214,6 +228,7 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
                   <ReactMarkdown
                     className="prose prose-sm max-w-none"
                     components={markdownComponents}
+                    urlTransform={sanitizeUrl}
                   >
                     {maskedContent}
                   </ReactMarkdown>
