@@ -21,6 +21,13 @@
 const SAFE_URL_SCHEMES = ['https:', 'http:', 'mailto:'];
 
 /**
+ * Sentinel returned by {@link sanitizeUrl} for a URL that failed
+ * {@link isSafeUrl}. Renderers compare against this to show blocked links
+ * and images as plain text instead of something clickable.
+ */
+export const BLOCKED_URL = '#blocked';
+
+/**
  * Returns `true` when the given URL uses a safe scheme, `false` otherwise.
  * Relative URLs (no scheme) are allowed.
  *
@@ -103,7 +110,7 @@ export function isSafeUrl(url: string | undefined | null): boolean {
  * @see {@link isSafeUrl} for the underlying validation logic.
  */
 export function sanitizeUrl(url: string | undefined | null): string {
-  return isSafeUrl(url) ? (url as string) : '#blocked';
+  return isSafeUrl(url) ? (url as string) : BLOCKED_URL;
 }
 
 /**
