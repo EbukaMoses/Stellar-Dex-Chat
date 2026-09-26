@@ -785,6 +785,9 @@ pub enum DataKey {
     TokenAllowlistCount,
     TokenAllowlistEnabledIndex(u64),
     TokenAllowlistEnabledCount,
+    /// Slot in `TokenAllowlistEnabledIndex` holding this token's entry, so a
+    /// toggle updates the entry in place instead of appending (Issue #1406).
+    TokenAllowlistEnabledSlot(Address),
     UserDailyWithdrawal(Address),
     EscrowStorageVersion,
     EscrowRecord(u64),
@@ -1986,7 +1989,21 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
             .instance()
             .set(&DataKey::TokenAllowlistEnabled(token.clone()), &enabled);
 
-        // Append to token allowlist enabled index for enumeration
+        let entry = TokenAllowlistEnabledEntry {
+            token: token.clone(),
+            enabled,
+        };
+
+        // Issue #1406: keep one index entry per token. A token seen before is
+        // updated in its existing slot; only a new token appends a slot.
+        let slot_key = DataKey::TokenAllowlistEnabledSlot(token.clone());
+        if let Some(slot) = env.storage().persistent().get::<_, u64>(&slot_key) {
+            env.storage()
+                .persistent()
+                .set(&DataKey::TokenAllowlistEnabledIndex(slot), &entry);
+            return Ok(());
+        }
+
         let count: u64 = env
             .storage()
             .instance()
@@ -1995,13 +2012,10 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
         if count == u64::MAX {
             return Err(Error::Overflow);
         }
-        let entry = TokenAllowlistEnabledEntry {
-            token: token.clone(),
-            enabled,
-        };
         env.storage()
             .persistent()
             .set(&DataKey::TokenAllowlistEnabledIndex(count), &entry);
+        env.storage().persistent().set(&slot_key, &count);
         env.storage()
             .instance()
             .set(&DataKey::TokenAllowlistEnabledCount, &(count.checked_add(1).ok_or(Error::Overflow)?));
@@ -2011,9 +2025,13 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     pub fn add_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .set(&DataKey::TokenAllowed(token.clone(), address.clone()), &true);
+        let allowed_key = DataKey::TokenAllowed(token.clone(), address.clone());
+        // Issue #1406: re-adding a listed pair is a no-op, so the enumeration
+        // index never holds duplicate live entries.
+        if env.storage().persistent().has(&allowed_key) {
+            return Ok(());
+        }
+        env.storage().persistent().set(&allowed_key, &true);
 
         // Append to token allowlist index for enumeration
         let count: u64 = env
@@ -2040,9 +2058,12 @@ env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
 
     pub fn remove_token_allowlist(env: Env, token: Address, address: Address) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        env.storage()
-            .persistent()
-            .remove(&DataKey::TokenAllowed(token.clone(), address.clone()));
+        let allowed_key = DataKey::TokenAllowed(token.clone(), address.clone());
+        // Nothing to remove, so skip the index scan.
+        if !env.storage().persistent().has(&allowed_key) {
+            return Ok(());
+        }
+        env.storage().persistent().remove(&allowed_key);
 
         // Tombstone the index slot (mark as removed) without compacting
         let count: u64 = env
