@@ -12,10 +12,13 @@
 //!   any denylist storage, regardless of how many times it's called;
 //! * the result tracks each address independently — denying one address
 //!   never flips another's answer;
-//! * every call emits an `IsDeniedCheckedEvent` naming the address that was
-//!   actually queried, carrying `EVENT_VERSION`, and reporting the true
-//!   current answer — including on an uninitialised contract, since the
-//!   lookup requires no prior `init` call;
+//! * the query works on an uninitialised contract too, since it requires no
+//!   prior `init` call;
+//! * as of Issue #1427, `is_denied` is a plain view function and publishes no
+//!   event of its own — it used to emit `IsDeniedCheckedEvent` on every call,
+//!   which cost gas on every simulation-only read for an audit trail no
+//!   indexer needs (the denylist mutations themselves — `DenyAddressEvent` /
+//!   `DenyRemovedEvent` — remain the audit trail for who is denied and when);
 //! * the documented `DeniedCount == u64::MAX` overflow guard returns
 //!   [`Error::Overflow`] rather than panicking or silently misreporting.
 //!
@@ -24,12 +27,10 @@
 
 #![cfg(test)]
 
-use crate::{DataKey, Error, FiatBridge, FiatBridgeClient, EVENT_VERSION};
+use crate::{DataKey, Error, FiatBridge, FiatBridgeClient};
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
-    token,
-    xdr::{ContractEventBody, ScSymbol, ScVal, StringM},
-    Address, Env, Vec,
+    token, Address, Env, Vec,
 };
 
 fn create_token_contract<'a>(
@@ -59,35 +60,6 @@ fn setup_bridge<'a>(env: &Env) -> (Address, FiatBridgeClient<'a>, Address) {
     (contract_id, client, admin)
 }
 
-/// Read the data map of the most recent event emitted by the bridge.
-fn last_event_field(env: &Env, contract_id: &Address, field: &str) -> Option<ScVal> {
-    let events = env.events().all().filter_by_contract(contract_id);
-    let raw = events.events();
-    let event = raw.last()?;
-    let ContractEventBody::V0(body) = &event.body;
-    match &body.data {
-        ScVal::Map(Some(map)) => map.iter().find_map(|entry| {
-            let key = ScVal::Symbol(ScSymbol(StringM::try_from(field).ok()?));
-            (entry.key == key).then(|| entry.val.clone())
-        }),
-        _ => None,
-    }
-}
-
-fn last_event_bool(env: &Env, contract_id: &Address, field: &str) -> Option<bool> {
-    match last_event_field(env, contract_id, field) {
-        Some(ScVal::Bool(b)) => Some(b),
-        _ => None,
-    }
-}
-
-fn last_event_u32(env: &Env, contract_id: &Address, field: &str) -> Option<u32> {
-    match last_event_field(env, contract_id, field) {
-        Some(ScVal::U32(v)) => Some(v),
-        _ => None,
-    }
-}
-
 fn bridge_event_count(env: &Env, contract_id: &Address) -> usize {
     env.events()
         .all()
@@ -113,11 +85,10 @@ fn is_denied_false_for_never_denied_address() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (contract_id, bridge, _admin) = setup_bridge(&env);
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
     let stranger = Address::generate(&env);
 
     assert!(!bridge.is_denied(&stranger));
-    assert_eq!(last_event_bool(&env, &contract_id, "result"), Some(false));
 }
 
 #[test]
@@ -125,13 +96,12 @@ fn is_denied_true_immediately_after_deny_address() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (contract_id, bridge, _admin) = setup_bridge(&env);
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
     let target = Address::generate(&env);
 
     bridge.deny_address(&target);
 
     assert!(bridge.is_denied(&target));
-    assert_eq!(last_event_bool(&env, &contract_id, "result"), Some(true));
 }
 
 #[test]
@@ -139,7 +109,7 @@ fn is_denied_false_immediately_after_remove_denied_address() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (contract_id, bridge, _admin) = setup_bridge(&env);
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
     let target = Address::generate(&env);
 
     bridge.deny_address(&target);
@@ -148,7 +118,6 @@ fn is_denied_false_immediately_after_remove_denied_address() {
     bridge.remove_denied_address(&target);
 
     assert!(!bridge.is_denied(&target));
-    assert_eq!(last_event_bool(&env, &contract_id, "result"), Some(false));
 }
 
 /// The lookup tracks each address independently: denying one address must
@@ -188,10 +157,15 @@ fn is_denied_never_mutates_denylist_state() {
     assert_eq!(denied_count(&env, &contract_id), count_before);
 }
 
-/// Every call emits, is not deduplicated, and reports the address actually
-/// queried rather than some other one.
+/// Issue #1427: `is_denied` is a plain view function and publishes no event
+/// of its own, regardless of the answer or how many times it's called. (It
+/// used to emit `IsDeniedCheckedEvent` on every call — including simulation
+/// calls a wallet makes just to render UI state, which paid the emission
+/// cost for an audit trail no indexer needs; the denylist mutations
+/// themselves remain fully audited via `DenyAddressEvent` /
+/// `DenyRemovedEvent`.)
 #[test]
-fn every_query_emits_an_event_naming_the_queried_address() {
+fn is_denied_publishes_no_events() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -201,36 +175,15 @@ fn every_query_emits_an_event_naming_the_queried_address() {
     bridge.deny_address(&denied);
 
     bridge.is_denied(&queried);
-    assert_eq!(bridge_event_count(&env, &contract_id), 1);
+    assert_eq!(bridge_event_count(&env, &contract_id), 0);
 
-    let logged = last_event_field(&env, &contract_id, "address");
-    let expected: ScVal = ScVal::from(&queried);
-    assert_eq!(logged, Some(expected));
-
-    bridge.is_denied(&queried);
-    assert_eq!(bridge_event_count(&env, &contract_id), 1);
-    assert_eq!(last_event_bool(&env, &contract_id, "result"), Some(false));
-}
-
-#[test]
-fn event_carries_event_version() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (contract_id, bridge, _admin) = setup_bridge(&env);
-    let target = Address::generate(&env);
-
-    bridge.is_denied(&target);
-
-    assert_eq!(
-        last_event_u32(&env, &contract_id, "version"),
-        Some(EVENT_VERSION)
-    );
+    bridge.is_denied(&denied);
+    assert_eq!(bridge_event_count(&env, &contract_id), 0);
 }
 
 /// The query requires no prior `init` call — it reads a per-address key
-/// that's simply absent on a fresh contract, so it must report `false` and
-/// still emit, not panic.
+/// that's simply absent on a fresh contract, so it must report `false`
+/// without panicking, and still emit nothing.
 #[test]
 fn works_on_an_uninitialised_contract() {
     let env = Env::default();
@@ -241,12 +194,7 @@ fn works_on_an_uninitialised_contract() {
     let stranger = Address::generate(&env);
 
     assert!(!bridge.is_denied(&stranger));
-
-    assert_eq!(last_event_bool(&env, &contract_id, "result"), Some(false));
-    assert_eq!(
-        last_event_u32(&env, &contract_id, "version"),
-        Some(EVENT_VERSION)
-    );
+    assert_eq!(bridge_event_count(&env, &contract_id), 0);
 }
 
 /// The doc comment on `is_denied` promises `Error::Overflow` rather than a
