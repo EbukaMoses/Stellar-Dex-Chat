@@ -11,5 +11,11 @@ export default withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   widenClientFileUpload: true,
   tunnelRoute: '/monitoring',
-  disableLogger: true,
+  // `disableLogger` is deprecated in @sentry/nextjs v10; use the
+  // webpack.treeshake option instead (#1490).
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 });
