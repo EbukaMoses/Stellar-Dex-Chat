@@ -441,6 +441,14 @@ pub struct SlippageThresholdSetEvent {
 
 #[contractevent]
 #[derive(Clone, Debug)]
+pub struct FeeRecipientSetEvent {
+    pub version: u32,
+    pub old_recipient: Option<Address>,
+    pub new_recipient: Option<Address>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug)]
 pub struct TelemetryEvent {
     pub version: u32,
     pub function_name: Symbol,
@@ -4003,7 +4011,41 @@ impl FiatBridge {
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
         
+        if recipient == env.current_contract_address() {
+            return Err(Error::InvalidRecipient);
+        }
+
+        let old_recipient = Self::get_fee_recipient(env.clone());
         env.storage().instance().set(&DataKey::FeeRecipient, &recipient);
+
+        FeeRecipientSetEvent {
+            version: EVENT_VERSION,
+            old_recipient,
+            new_recipient: Some(recipient),
+        }.publish(&env);
+
+        Ok(())
+    }
+    
+    pub fn clear_fee_recipient(env: Env) -> Result<(), Error> {
+        Self::emit_telemetry(&env, Symbol::new(&env, "clear_fee_recipient"));
+        
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        let old_recipient = Self::get_fee_recipient(env.clone());
+        env.storage().instance().remove(&DataKey::FeeRecipient);
+
+        FeeRecipientSetEvent {
+            version: EVENT_VERSION,
+            old_recipient,
+            new_recipient: None,
+        }.publish(&env);
+
         Ok(())
     }
     
@@ -5529,6 +5571,15 @@ impl FiatBridge {
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
 
+        // Reject admin as operator (role confusion guard)
+        if operator == admin {
+            return Err(Error::NotAllowed);
+        }
+        // Reject contract address as operator
+        if operator == env.current_contract_address() {
+            return Err(Error::InvalidRecipient);
+        }
+
         env.storage().instance().set(&DataKey::WithdrawOperator, &operator);
         SetWithdrawOperatorEvent { version: EVENT_VERSION, operator: operator.clone() }.publish(&env);
         Ok(())
@@ -6187,4 +6238,10 @@ mod test_set_withdrawal_expiry_invariants;
 
 #[cfg(test)]
 mod test_get_deploy_config_hash_invariants;
+
+#[cfg(test)]
+mod test_issue_1437;
+
+#[cfg(test)]
+mod test_migrate_escrow_invariants;
 
