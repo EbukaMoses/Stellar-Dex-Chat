@@ -6,7 +6,7 @@ A decentralized exchange (DEX) interface prioritizing seamless asset-to-bank con
 ![Next.js](https://img.shields.io/badge/Next.js-15.3.5-black)
 ![Rust](https://img.shields.io/badge/Rust-Soroban-orange)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
-![Coverage](https://img.shields.io/badge/coverage-≥70%25-brightgreen)
+
 
 ## Overview
 
@@ -103,7 +103,7 @@ DEX-CHAT converts crypto to fiat through an AI-guided conversation flow. The end
 
 The user connects their Freighter wallet and tells the AI assistant they want to offramp a token amount. The frontend builds a Soroban `deposit` transaction that transfers the specified token from the user's Stellar account into the `FiatBridge` contract. The contract validates the deposit against oracle-sourced prices, enforces slippage limits, checks per-token and daily deposit caps, and records a `Receipt` with a unique memo hash.
 
-For maintainers: how slippage BPS and the on-chain threshold interact is documented in [docs/slippage-threshold.md](docs/slippage-threshold.md).
+For maintainers: how slippage BPS and the on-chain threshold interact is documented in [../docs/slippage-threshold.md](../docs/slippage-threshold.md).
 
 ### 2. Escrow (on-chain hold)
 
@@ -125,7 +125,7 @@ The user sees a real-time transfer timeline in the chat interface and can downlo
 Before you begin, ensure you have the following installed:
 
 - **Node.js** (v18 or higher)
-- **npm** or **yarn**
+- **pnpm**
 - **Rust** & Cargo tooling + `wasm32-unknown-unknown` target
 - **Stellar CLI** (for interacting with Soroban)
 - **Docker** & **Docker Compose** (optional, for quick start)
@@ -142,11 +142,11 @@ The fastest way to get the full stack running locally is with Docker Compose. Th
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/leojay-net/DEX-CHAT.git
-cd DEX-CHAT
+git clone https://github.com/leojay-net/Stellar-Dex-Chat.git
+cd Stellar-Dex-Chat
 
 # 2. Copy the Docker environment file
-cp .env.docker dex_with_fiat_frontend/.env.local
+cp .env.docker Dechat/dex_with_fiat_frontend/.env.local
 
 # 3. Start the full stack
 docker compose up
@@ -180,14 +180,14 @@ If you prefer to run services individually or need more control:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/leojay-net/Dechat.git
-cd Dechat
+git clone https://github.com/leojay-net/Stellar-Dex-Chat.git
+cd Stellar-Dex-Chat
 ```
 
 ### 2. Smart Contract Setup
 
 ```bash
-cd stellar-contracts
+cd Dechat/stellar-contracts
 
 # Build the smart contracts
 cargo build --target wasm32-unknown-unknown --release
@@ -199,13 +199,13 @@ cargo test
 ### 3. Frontend Setup
 
 ```bash
-cd dex_with_fiat_frontend
+cd Dechat/dex_with_fiat_frontend
 
 # Install dependencies needed for Stellar connection
-npm install
+pnpm install
 
 # Start the development server
-npm run dev
+pnpm run dev
 ```
 
 ### 4. Git Pre-commit Hooks (Husky + lint-staged)
@@ -235,7 +235,7 @@ npm run precommit:eslint
 
 ## Documentation
 
-- **[TypeScript SDK Examples](docs/typescript-sdk-examples.md)** - Complete guide for calling new contract functions (`heartbeat`, `deny_address`, `migrate_escrow`, `execute_batch_admin`) from the TypeScript SDK with error handling patterns and code examples.
+- **[TypeScript SDK Examples](../docs/typescript-sdk-examples.md)** - Complete guide for calling new contract functions (`heartbeat`, `deny_address`, `migrate_escrow`, `execute_batch_admin`) from the TypeScript SDK with error handling patterns and code examples.
 
 ### Invariant tests (contracts)
 
@@ -260,7 +260,7 @@ violate it, named after the property it protects.
 Run them with the rest of the contract suite:
 
 ```bash
-cd stellar-contracts
+cd Dechat/stellar-contracts
 cargo test                                     # all tests, invariants included
 cargo test invariants                          # invariant modules only
 ```
