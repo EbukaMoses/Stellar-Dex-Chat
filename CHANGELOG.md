@@ -882,6 +882,7 @@ Repo Avatar
 - **frontend:** Replace deprecated Sentry disableLogger option
 - Address frontend security and payout issues
 - **contract:** Validate set_fee_recipient and set_withdraw_operator targets, and emit a fee-recipient event
+- **contract:** Emit AdminTransferEvent in transfer_admin and accept_admin
 
 ### Changed
 
@@ -1167,6 +1168,7 @@ Repo Avatar
 - **changelog:** Update changelog [skip ci]
 - **contract:** Fix UPGRADE_RUNBOOK and VERSION_MIGRATION drift from API
 - **contract:** Trim rustdoc to reduce embedded contract spec size
+- **changelog:** Update changelog [skip ci]
 
 ### Deprecated
 
