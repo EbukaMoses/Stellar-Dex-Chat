@@ -140,9 +140,7 @@ export const paystackProvider: PayoutProvider = {
       amount: input.amount * 100,
       recipient: input.recipient,
       reason: input.reason || 'Crypto withdrawal',
-      reference:
-        input.reference ||
-        `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      reference: input.reference,
     };
 
     const response = await axios.post(
