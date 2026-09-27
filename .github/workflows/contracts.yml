@@ -209,9 +209,7 @@ jobs:
 
       - name: Build head WASM
         working-directory: head/Dechat/stellar-contracts
-        # --lib only: this crate also has src/bin/deploy_fiat_bridge_futurenet.rs,
-        # which compiles to its own .wasm and would collide with a glob match.
-        run: cargo build --target wasm32-unknown-unknown --release --lib
+        run: cargo build --target wasm32-unknown-unknown --release
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/.wasm-size-target
 
@@ -223,7 +221,7 @@ jobs:
 
       - name: Build base WASM
         working-directory: base/Dechat/stellar-contracts
-        run: cargo build --target wasm32-unknown-unknown --release --lib
+        run: cargo build --target wasm32-unknown-unknown --release
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/.wasm-size-target
 
