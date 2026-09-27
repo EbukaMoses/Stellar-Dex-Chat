@@ -833,7 +833,6 @@ pub enum DataKey {
     LimitMaxCap,
     OperatorDailyLimit(Address),
     EmergencyRecoveryCap,
-    FeeWithdrawalNonce,
     FeeWithdrawalNonceByCaller(Address),
     // ── Issue #1113: per-caller replay protection for batch fee withdrawals ──
     FeeWithdrawalBatchNonce(Address),
@@ -5174,26 +5173,6 @@ let admin = Self::require_admin(&env)?;
         Ok(())
     }
 
-    /// Migrate the legacy global fee-withdrawal nonce to the admin's per-caller
-    /// nonce. Safe to call multiple times; only copies when the target is absent.
-    pub fn migrate_fee_withdrawal_nonce(env: Env) -> Result<(), Error> {
-        let admin = Self::require_admin(&env)?;
-
-        if let Some(legacy_nonce) = env
-            .storage()
-            .instance()
-            .get::<_, u64>(&DataKey::FeeWithdrawalNonce)
-        {
-            let key = DataKey::FeeWithdrawalNonceByCaller(admin.clone());
-            if !env.storage().instance().has(&key) {
-                env.storage().instance().set(&key, &legacy_nonce);
-            }
-            env.storage().instance().remove(&DataKey::FeeWithdrawalNonce);
-        }
-
-        Ok(())
-    }
-
     /// Get the current upgrade cancellation nonce for an admin
     pub fn get_upgrade_cancellation_nonce(env: Env, admin: Address) -> u64 {
         env.storage()
@@ -5315,7 +5294,7 @@ mod test_migrate_escrow_invariants;
 mod test_fee_withdrawal_nonce;
 
 #[cfg(test)]
-mod test_migrate_fee_withdrawal_nonce;
+
 
 #[cfg(test)]
 mod test_view_functions_emit_no_events;
