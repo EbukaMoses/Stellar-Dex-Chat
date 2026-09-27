@@ -214,8 +214,8 @@ This repository uses Husky and lint-staged to run quick quality checks before ea
 
 ```bash
 # from repository root
-npm install
-npm run prepare
+pnpm install
+pnpm run prepare
 
 # required once for Rust linting
 rustup component add clippy
