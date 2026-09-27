@@ -1,8 +1,8 @@
 # Root-level generated artifacts
 node_modules/
-dex_with_fiat_frontend/.next/
-dex_with_fiat_frontend/node_modules/
-stellar-contracts/target/
+/dex_with_fiat_frontend/.next/
+/dex_with_fiat_frontend/node_modules/
+/stellar-contracts/target/
 
 # Local environment files
 .env.local
@@ -11,6 +11,6 @@ stellar-contracts/target/
 *.wasm
 
 issue.md
-pr.mdstellar-contracts/
-dex_with_fiat_frontend/
-Stellar-Dex-Chat
+pr.md/stellar-contracts/
+/dex_with_fiat_frontend/
+/Stellar-Dex-Chat
