@@ -13,7 +13,15 @@ use soroban_sdk::{
     vec, Address, Env,
 };
 
-fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenClient<'_>) {
+fn setup(
+    env: &Env,
+) -> (
+    Address,
+    FiatBridgeClient<'_>,
+    Address,
+    Address,
+    TokenClient<'_>,
+) {
     let contract_id = env.register(FiatBridge, ());
     let client = FiatBridgeClient::new(env, &contract_id);
 
@@ -25,7 +33,15 @@ fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenCl
     let token = TokenClient::new(env, &token_addr);
 
     let signers = vec![env, admin.clone()];
-    client.init(&admin, &token_addr, &10_000_000i128, &1i128, &signers, &1, &0);
+    client.init(
+        &admin,
+        &token_addr,
+        &10_000_000i128,
+        &1i128,
+        &signers,
+        &1,
+        &0,
+    );
 
     // Seed the fee vault directly rather than exercising the full
     // deposit-with-fee flow; `token::TokenRegistry` is already populated by
@@ -116,7 +132,10 @@ fn stale_nonce_from_the_other_entrypoint_is_rejected() {
 
     // nonce 0 has already been consumed by the batch call.
     let result = client.try_withdraw_fees(&admin, &token_addr, &500, &0);
-    assert!(result.is_err(), "a nonce already consumed by the batch call must be rejected");
+    assert!(
+        result.is_err(),
+        "a nonce already consumed by the batch call must be rejected"
+    );
 }
 
 /// `get_fee_withdrawal_batch_nonce` is a plain alias of
