@@ -11,4 +11,6 @@ stellar-contracts/target/
 *.wasm
 
 issue.md
-pr.md
+pr.mdstellar-contracts/
+dex_with_fiat_frontend/
+Stellar-Dex-Chat
