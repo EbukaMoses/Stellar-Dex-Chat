@@ -176,12 +176,18 @@ fn activation_and_deactivation_are_exact_inverses() {
     let bystander = Address::generate(&env);
 
     bridge.set_operator(&operator, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(1));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(1)
+    );
     assert!(bridge.is_operator(&operator));
     assert!(!bridge.is_operator(&bystander));
 
     bridge.set_operator(&operator, &false, &1);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(0));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(0)
+    );
     assert!(!bridge.is_operator(&operator));
     assert!(!bridge.is_operator(&bystander));
 }
@@ -220,14 +226,26 @@ fn roster_size_tracks_the_number_of_active_operators() {
     let c = Address::generate(&env);
 
     bridge.set_operator(&a, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(1));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(1)
+    );
     bridge.set_operator(&b, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(2));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(2)
+    );
     bridge.set_operator(&c, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(3));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(3)
+    );
 
     bridge.set_operator(&b, &false, &1);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(2));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(2)
+    );
 
     assert!(bridge.is_operator(&a));
     assert!(!bridge.is_operator(&b));
@@ -257,7 +275,10 @@ fn event_reports_the_full_transition() {
         Some(false),
         "the first activation must report a false previous flag"
     );
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(1));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(1)
+    );
 
     bridge.set_operator(&operator, &true, &1);
     assert_eq!(
@@ -272,7 +293,10 @@ fn event_reports_the_full_transition() {
         last_event_bool(&env, &contract_id, "previous_active"),
         Some(true)
     );
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(0));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(0)
+    );
 }
 
 /// A rejected call emits nothing at all.
@@ -383,7 +407,10 @@ fn roster_never_exceeds_the_configured_cap() {
 
     bridge.set_operator(&a, &true, &0);
     bridge.set_operator(&b, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(2));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(2)
+    );
 
     assert_eq!(
         bridge.try_set_operator(&c, &true, &0),
@@ -399,7 +426,10 @@ fn roster_never_exceeds_the_configured_cap() {
     // Freeing a slot lets the third operator in, and the roster stays at the cap.
     bridge.set_operator(&a, &false, &1);
     bridge.set_operator(&c, &true, &0);
-    assert_eq!(last_event_u32(&env, &contract_id, "operator_count"), Some(2));
+    assert_eq!(
+        last_event_u32(&env, &contract_id, "operator_count"),
+        Some(2)
+    );
 }
 
 // ── Nonces ───────────────────────────────────────────────────────────────

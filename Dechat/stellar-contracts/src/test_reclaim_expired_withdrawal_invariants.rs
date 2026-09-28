@@ -81,7 +81,8 @@ fn test_reclaim_expired_withdrawal_decreases_liabilities() {
     assert_eq!(initial_liabilities, 100);
 
     // Advance ledger past the expiry window
-    env.ledger().set_sequence_number(env.ledger().sequence() + WITHDRAWAL_EXPIRY_WINDOW_LEDGERS + 10);
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + WITHDRAWAL_EXPIRY_WINDOW_LEDGERS + 10);
 
     // Reclaim the expired withdrawal
     bridge.reclaim_expired_withdrawal(&request_id);
@@ -112,7 +113,8 @@ fn test_reclaim_expired_withdrawal_removes_from_queue() {
     assert_eq!(initial_len, 1);
 
     // Advance ledger past the expiry window
-    env.ledger().set_sequence_number(env.ledger().sequence() + WITHDRAWAL_EXPIRY_WINDOW_LEDGERS + 10);
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + WITHDRAWAL_EXPIRY_WINDOW_LEDGERS + 10);
 
     // Reclaim the expired withdrawal
     bridge.reclaim_expired_withdrawal(&request_id);

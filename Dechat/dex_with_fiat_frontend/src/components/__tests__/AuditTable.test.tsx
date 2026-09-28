@@ -419,4 +419,16 @@ describe('AuditTable', () => {
     const skeletonRow = busyTable.querySelector('tbody tr');
     expect(skeletonRow).toHaveClass('motion-reduce:animate-none');
   });
+
+  it('associates filter labels with their controls via htmlFor and id', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(makeSuccessResponse())));
+    render(React.createElement(AuditTable));
+
+    expect(screen.getByLabelText('Action Type')).toBeInTheDocument();
+    expect(screen.getByLabelText('Status')).toBeInTheDocument();
+    expect(screen.getByLabelText('Admin Address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Transaction Hash')).toBeInTheDocument();
+    expect(screen.getByLabelText('Start Date (from)')).toBeInTheDocument();
+    expect(screen.getByLabelText('End Date (to)')).toBeInTheDocument();
+  });
 });

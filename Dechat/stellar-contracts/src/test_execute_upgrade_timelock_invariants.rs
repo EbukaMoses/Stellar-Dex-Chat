@@ -36,7 +36,9 @@
 
 use crate::{Error, FiatBridge, FiatBridgeClient};
 use proptest::prelude::*;
-use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, token, Address, BytesN, Env, Vec};
+use soroban_sdk::{
+    testutils::Address as _, testutils::Ledger as _, token, Address, BytesN, Env, Vec,
+};
 
 /// Mirrors the contract-private `MIN_UPGRADE_DELAY`.
 const MIN_UPGRADE_DELAY: u32 = 1_000;

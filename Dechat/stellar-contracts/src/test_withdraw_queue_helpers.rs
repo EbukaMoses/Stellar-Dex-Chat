@@ -14,7 +14,15 @@ use soroban_sdk::{
     Address, Bytes, Env,
 };
 
-fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenClient<'_>) {
+fn setup(
+    env: &Env,
+) -> (
+    Address,
+    FiatBridgeClient<'_>,
+    Address,
+    Address,
+    TokenClient<'_>,
+) {
     let contract_id = env.register(FiatBridge, ());
     let client = FiatBridgeClient::new(env, &contract_id);
 
@@ -26,23 +34,45 @@ fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenCl
     let token = TokenClient::new(env, &token_addr);
 
     let signers = soroban_sdk::vec![env, admin.clone()];
-    client.init(&admin, &token_addr, &10_000_000i128, &1i128, &signers, &1, &0);
+    client.init(
+        &admin,
+        &token_addr,
+        &10_000_000i128,
+        &1i128,
+        &signers,
+        &1,
+        &0,
+    );
 
     StellarAssetClient::new(env, &token_addr).mint(&admin, &10_000_000i128);
-    client.deposit(&admin, &10_000_000i128, &token_addr, &Bytes::new(env), &0, &0, &None);
+    client.deposit(
+        &admin,
+        &10_000_000i128,
+        &token_addr,
+        &Bytes::new(env),
+        &0,
+        &0,
+        &None,
+    );
 
     (contract_id, client, admin, token_addr, token)
 }
 
 fn queue_len(env: &Env, contract_id: &Address) -> u64 {
     env.as_contract(contract_id, || {
-        env.storage().instance().get(&DataKey::WithdrawQueueLen).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::WithdrawQueueLen)
+            .unwrap_or(0)
     })
 }
 
 fn tier_len(env: &Env, contract_id: &Address, tier: u32) -> u64 {
     env.as_contract(contract_id, || {
-        env.storage().instance().get(&DataKey::TierQueueLen(tier)).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::TierQueueLen(tier))
+            .unwrap_or(0)
     })
 }
 
@@ -106,7 +136,10 @@ fn reclaim_expired_withdrawal_removes_from_queue_and_releases_liability() {
 
     let expiry_window = client.get_withdrawal_expiry();
     env.ledger().with_mut(|l| {
-        l.sequence_number = l.sequence_number.saturating_add(expiry_window).saturating_add(1)
+        l.sequence_number = l
+            .sequence_number
+            .saturating_add(expiry_window)
+            .saturating_add(1)
     });
 
     client.reclaim_expired_withdrawal(&id);
@@ -129,7 +162,10 @@ fn reclaim_expired_withdrawal_now_respects_pause() {
 
     let expiry_window = client.get_withdrawal_expiry();
     env.ledger().with_mut(|l| {
-        l.sequence_number = l.sequence_number.saturating_add(expiry_window).saturating_add(1)
+        l.sequence_number = l
+            .sequence_number
+            .saturating_add(expiry_window)
+            .saturating_add(1)
     });
 
     client.pause();
@@ -155,7 +191,11 @@ fn per_tier_bookkeeping_is_independent_across_entrypoints() {
 
     client.cancel_withdrawal(&id_tier0);
 
-    assert_eq!(tier_len(&env, &contract_id, 0), 0, "cancelling tier 0 must not touch tier 1");
+    assert_eq!(
+        tier_len(&env, &contract_id, 0),
+        0,
+        "cancelling tier 0 must not touch tier 1"
+    );
     assert_eq!(tier_len(&env, &contract_id, 1), 1);
 
     client.execute_withdrawal(&id_tier1, &None, &0i128, &0u32, &0u64);

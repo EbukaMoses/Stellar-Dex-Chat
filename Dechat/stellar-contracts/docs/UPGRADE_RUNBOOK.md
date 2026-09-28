@@ -205,37 +205,6 @@ stellar contract invoke \
 
 Expected: `UpgradeExecutedEvent` emitted; contract WASM replaced.
 
-### Step 4 — Run the Fee-Withdrawal Nonce Migration (one-time, pre-#1422 contracts only)
-
-**When this applies:** only for a contract deployed *before* the per-caller
-fee-withdrawal nonce (`FeeWithdrawalNonceByCaller`) replaced the legacy global
-`FeeWithdrawalNonce` key. If this is the first upgrade of a given deployment
-since that change shipped, run this once, immediately after `execute_upgrade`
-and before resuming `withdraw_fees` traffic:
-
-```bash
-stellar contract invoke \
-  --id $CONTRACT_ID \
-  --network $NETWORK \
-  --source-account $ADMIN_SECRET \
-  -- migrate_fee_withdrawal_nonce
-```
-
-What it does: copies the legacy global nonce onto the admin's per-caller
-nonce (only if the per-caller key is not already set — it will not clobber a
-nonce that `withdraw_fees_batch` has already advanced), then removes the
-legacy key. It is **safe to call more than once** — a second call is a no-op
-once the legacy key is gone — and safe to call even if the legacy key was
-never set (a contract deployed after #1422 shipped has nothing to migrate).
-
-Skipping this step is not catastrophic — `get_fee_withdrawal_nonce` simply
-continues to report `0` for the admin until the first `withdraw_fees` or
-`withdraw_fees_batch` call establishes the per-caller key from scratch — but
-running it preserves the admin's true nonce position across the upgrade, so
-prefer running it as part of every upgrade until a follow-up release removes
-the legacy `FeeWithdrawalNonce` key and this migration entrypoint entirely
-(see the tracking issue linked in `NONCE_REPLAY_PROTECTION.md`).
-
 ---
 
 ## Post-Upgrade Verification
