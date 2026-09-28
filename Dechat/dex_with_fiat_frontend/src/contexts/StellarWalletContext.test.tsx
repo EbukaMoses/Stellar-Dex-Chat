@@ -2,7 +2,10 @@ import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Networks } from '@stellar/stellar-sdk';
-import { StellarWalletProvider, useStellarWallet } from './StellarWalletContext';
+import {
+  StellarWalletProvider,
+  useStellarWallet,
+} from './StellarWalletContext';
 
 const freighter = vi.hoisted(() => ({
   isConnected: vi.fn(),
@@ -45,7 +48,9 @@ describe('StellarWalletContext', () => {
   it('defaults to a disconnected state when Freighter is not installed', async () => {
     const { result } = renderHook(() => useStellarWallet(), { wrapper });
 
-    await waitFor(() => expect(result.current.isFreighterInstalled).toBe(false));
+    await waitFor(() =>
+      expect(result.current.isFreighterInstalled).toBe(false),
+    );
 
     expect(result.current.connection.isConnected).toBe(false);
     expect(result.current.accounts).toEqual([]);
@@ -190,15 +195,31 @@ describe('StellarWalletContext', () => {
   });
 
   it('mockConnect sets a TESTNET connection directly', () => {
+    vi.stubEnv('NEXT_PUBLIC_E2E', 'true');
     const { result } = renderHook(() => useStellarWallet(), { wrapper });
 
     act(() => {
-      result.current.mockConnect(ADDRESS);
+      result.current.mockConnect?.(ADDRESS);
     });
 
     expect(result.current.connection.isConnected).toBe(true);
     expect(result.current.connection.address).toBe(ADDRESS);
     expect(result.current.connection.network).toBe('TESTNET');
+  });
+
+  it('does not expose the mock wallet bridge in production when E2E is disabled', async () => {
+    vi.stubEnv('NEXT_PUBLIC_E2E', 'false');
+    vi.stubEnv('NODE_ENV', 'production');
+    delete window.mockStellarConnect;
+
+    const { result } = renderHook(() => useStellarWallet(), { wrapper });
+
+    await waitFor(() =>
+      expect(result.current.isFreighterInstalled).toBe(false),
+    );
+    expect(window.mockStellarConnect).toBeUndefined();
+    expect(result.current.mockConnect).toBeUndefined();
+    vi.unstubAllEnvs();
   });
 
   it('clearSessionExpired resets the sessionExpired flag after an expired session is detected', async () => {

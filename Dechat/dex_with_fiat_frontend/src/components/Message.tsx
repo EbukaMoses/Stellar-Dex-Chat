@@ -12,6 +12,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import { toDate } from '@/lib/messageUtils';
+import { BLOCKED_URL, sanitizeUrl } from '@/lib/markdownSanitizer';
 import { MAX_AUTO_RETRIES, useMessageRetry } from '@/hooks/useMessageRetry';
 import { useTranslation } from '@/contexts/TranslationContext';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -125,16 +126,29 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
       h3: ({ children }) => (
         <h3 className="text-sm font-bold mb-1">{children}</h3>
       ),
-      a: ({ href, children }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:underline"
-        >
-          {children}
-        </a>
-      ),
+      // `urlTransform={sanitizeUrl}` (below) rewrites every unsafe href/src to
+      // BLOCKED_URL before it reaches these renderers, so a blocked link or
+      // image is shown as plain text rather than something clickable (#1498).
+      a: ({ href, children }) =>
+        !href || href === BLOCKED_URL ? (
+          <span>{children}</span>
+        ) : (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:underline"
+          >
+            {children}
+          </a>
+        ),
+      img: ({ src, alt }) =>
+        typeof src !== 'string' || !src || src === BLOCKED_URL ? (
+          <span>{alt}</span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt={alt ?? ''} />
+        ),
     }),
     [isDarkMode],
   );
@@ -143,8 +157,16 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
   const timestamp = toDate(message.timestamp);
 
   const handleMessageKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (hasError && e.key === 'r' && !e.ctrlKey && !e.metaKey) {
-      retry.retryNow();
+    if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+      if (hasError) {
+        retry.retryNow();
+      }
+    } else if (e.key === 'Escape') {
+      (e.currentTarget as HTMLElement).blur();
+    } else if (e.key === 'c' && !e.ctrlKey && !e.metaKey) {
+      if (message.metadata?.transactionData?.txHash) {
+        navigator.clipboard.writeText(message.metadata.transactionData.txHash);
+      }
     }
   };
 
@@ -157,7 +179,7 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
       role="group"
       tabIndex={0}
       aria-label={`${isUser ? 'Your' : 'Assistant'} message`}
-      aria-keyshortcuts={hasError ? 'R' : undefined}
+      aria-keyshortcuts={hasError ? 'R C Escape' : 'C Escape'}
       onKeyDown={handleMessageKeyDown}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent`}
     >
@@ -206,6 +228,7 @@ export default function Message({ message, onActionClick, onRetry, shouldAnimate
                   <ReactMarkdown
                     className="prose prose-sm max-w-none"
                     components={markdownComponents}
+                    urlTransform={sanitizeUrl}
                   >
                     {maskedContent}
                   </ReactMarkdown>

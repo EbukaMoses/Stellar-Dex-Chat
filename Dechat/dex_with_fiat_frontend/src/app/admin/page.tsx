@@ -17,7 +17,6 @@ import { stroopsToDisplay } from '@/lib/stellarContract';
 import SkeletonHeader from '@/components/ui/skeleton/SkeletonHeader';
 import SkeletonPayout from '@/components/ui/skeleton/SkeletonPayout';
 import CopyButton from '@/components/ui/CopyButton';
-import ConfirmDestructiveActionDialog from '@/components/ui/ConfirmDestructiveActionDialog';
 import {
   AreaChart,
   Area,
@@ -658,35 +657,9 @@ export default function AdminDashboard() {
                           ? 'Exporting...'
                           : 'Export CSV'}
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsClearLogsDialogOpen(true)}
-                      disabled={auditLoading || auditTotal === 0}
-                      className="h-10 mt-0 sm:mt-5 px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed text-white"
-                      style={{ backgroundColor: 'var(--color-danger)' }}
-                      aria-label="Clear all audit log entries"
-                    >
-                      Clear Audit Logs
-                    </button>
                   </div>
                 </div>
               </div>
-
-              <ConfirmDestructiveActionDialog
-                isOpen={isClearLogsDialogOpen}
-                onClose={() => setIsClearLogsDialogOpen(false)}
-                onConfirm={handleClearAuditLogs}
-                actionName="Clear Audit Logs"
-                description="Permanently deletes every audit log entry currently stored for this admin dashboard."
-                consequences={[
-                  'All audit history will be permanently lost.',
-                  'This action cannot be reversed or recovered.',
-                ]}
-                requireTypedConfirmation
-                confirmLabel="Clear Logs"
-                isConfirming={isClearingLogs}
-              />
 
               {auditError && (
                 <div

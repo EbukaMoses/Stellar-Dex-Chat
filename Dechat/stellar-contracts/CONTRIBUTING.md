@@ -46,6 +46,27 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 Ensure that all tests pass before opening a Pull Request. We run automated checks in our CI/CD pipeline, and PRs with failing tests will not be merged.
 
+## Test Snapshots
+
+Running `cargo test` writes a JSON snapshot to `test_snapshots/` for every
+test (invariant, proptest, and regular unit test alike). These are debugging
+artifacts, not fixtures the suite reads back — the entire `test_snapshots/`
+directory is listed in `.gitignore` and none of it should be committed.
+
+If `git status` shows files under `test_snapshots/` as modified or new,
+they were tracked before the `.gitignore` rule was added and were never
+untracked. Remove them rather than committing the changes:
+
+```bash
+git rm --cached test_snapshots/<path-to-stray-file>
+```
+
+Do not `git add -f` anything under `test_snapshots/`. If you find a
+recurring need to keep a specific snapshot around for review (e.g. to pin
+down a regression), commit it under a different, explicitly-tracked path
+instead (for example alongside the test that generated it), not inside the
+gitignored `test_snapshots/` tree.
+
 ## Writing New Functions
 
 When adding new functionality to the contracts, please follow these guidelines:

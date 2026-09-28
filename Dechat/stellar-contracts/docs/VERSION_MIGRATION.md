@@ -24,17 +24,22 @@ env.events().publish(
 
 ### Versioned Events
 
+Events are published with topics in format `(VERSION, event_name)` where VERSION is numeric.
+The data payload depends on the event type.
+
 | Event | Version | Topics | Data |
 |-------|---------|--------|------|
-| deposit | v1 | (event_name, version, depositor) | amount |
-| withdraw | v1 | (event_name, version, recipient) | amount |
-| rcpt_issd | v1 | (event_name, version) | receipt_id |
-| slippage | v1 | (event_name, version) | slippage_bps |
-| quota_set | v1 | (event_name, version) | quota |
-| migration | v1 | (event_name, version) | (cursor, count) |
-| batch_ok | v1 | (event_name, version) | (success_count, total_ops) |
-| batch_fail | v1 | (event_name, version) | (failed_index, total_ops) |
-| prune_inactive_operators | v1 | (event_name, version) | (removed_count, active_count) |
+| deposit | 1 | (1, "dep") | (depositor, amount) |
+| withdraw | 1 | (1, "wdr") | (recipient, amount) |
+| receipt issued | 1 | (1, "rcpt_issd") | receipt_id |
+| slippage | 1 | (1, "slip") | slippage_bps |
+| quota set | 1 | (1, "quota_set") | quota |
+| migration | 1 | (1, "migration") | (cursor, count) |
+| batch ok | 1 | (1, "batch_ok") | (success_count, total_ops) |
+| batch fail | 1 | (1, "batch_fail") | (failed_index, total_ops) |
+| upgrade proposal | 1 | (1, "upg_prop") | (wasm_hash, executable_after) |
+| upgrade executed | 1 | (1, "upg_exec") | wasm_hash |
+| upgrade cancelled | 1 | (1, "upg_cancel") | (admin, wasm_hash, nonce) |
 
 ---
 
@@ -43,12 +48,20 @@ env.events().publish(
 Contract upgrades follow a two-phase commit pattern to prevent surprise
 upgrades and give observers time to audit new bytecode.
 
+### Phase 0 — Set Delay (optional, once per deployment)
+
+```rust
+// Admin sets the default upgrade delay for all future proposals.
+// delay must be >= MIN_UPGRADE_DELAY (1 000 ledgers ≈ 83 minutes).
+fn set_upgrade_delay(env: Env, ledgers: u32) -> Result<(), Error>
+```
+
 ### Phase 1 — Propose
 
 ```rust
-// Admin proposes a new WASM hash with a mandatory delay.
-// delay must be >= MIN_UPGRADE_DELAY (1 000 ledgers ≈ 83 minutes).
-fn propose_upgrade(env: Env, wasm_hash: BytesN<32>, delay: u32) -> Result<(), Error>
+// Admin proposes a new WASM hash.
+// The delay comes from the stored UpgradeDelay; executable_after = current_ledger + stored_delay.
+fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>, delay: u32, _new_version: u32) -> Result<(), Error>
 ```
 
 **Overflow prevention:** `executable_after = current_ledger + delay` is
@@ -60,19 +73,18 @@ would allow an immediate upgrade bypass).
 
 ```rust
 // Admin executes the upgrade after the timelock has elapsed.
-// Fails with Error::UpgradeNotReady if current_ledger <= executable_after.
+// Fails with Error::UpgradeNotReady if current_ledger < executable_after.
 fn execute_upgrade(env: Env) -> Result<(), Error>
 ```
 
-**Boundary check:** The readiness check uses strict `>` (not `>=`), adding
-one extra ledger of safety margin consistent with the rest of the timelock
-pattern.
+**Boundary check:** Execution is allowed once `current_ledger >= executable_after`.
 
 ### Cancel
 
 ```rust
 // Admin cancels a pending proposal without executing it.
-fn cancel_upgrade(env: Env) -> Result<(), Error>
+// Requires a nonce for replay protection.
+fn cancel_upgrade(env: Env, nonce: u64) -> Result<(), Error>
 ```
 
 ### Query
@@ -81,11 +93,14 @@ fn cancel_upgrade(env: Env) -> Result<(), Error>
 // Returns the pending proposal, or None if no upgrade is pending.
 fn get_upgrade_proposal(env: Env) -> Option<UpgradeProposal>
 
-// Returns the configured minimum upgrade delay (default: MIN_UPGRADE_DELAY).
-fn get_upgrade_delay(env: Env) -> u32
+// Returns timing metadata for the pending proposal (proposed_at, delay, executable_after).
+fn get_upgrade_proposal_timing(env: Env) -> Option<UpgradeProposalTiming>
 
-// Admin can update the minimum delay.
-fn set_upgrade_delay(env: Env, delay: u32) -> Result<(), Error>
+// Returns the configured minimum upgrade delay (default: MIN_UPGRADE_DELAY).
+fn get_upgrade_delay(env: Env) -> u32  // [deprecated; use get_config_snapshot]
+
+// Returns the next expected nonce for cancelling upgrades from an admin address.
+fn get_upgrade_cancellation_nonce(env: Env, admin: Address) -> u64
 ```
 
 ### Error Codes

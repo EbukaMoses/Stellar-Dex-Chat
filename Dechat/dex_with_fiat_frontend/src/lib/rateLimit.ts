@@ -1,4 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { getClientIp } from './clientIp';
+
+export { getClientIp };
 
 /**
  * Configuration options for the in-memory sliding window rate limiter.
@@ -10,27 +13,12 @@ export interface RateLimitConfig {
   windowMs: number;
 }
 
-// In-memory store: key -> { count, windowStart }
-const store = new Map<string, { count: number; windowStart: number }>();
-
-/**
- * Extracts the client IP from a NextRequest.
- * Checks `x-forwarded-for` first, then `x-real-ip`, then falls back to `'unknown'`.
- *
- * @param req - Incoming Next.js server request.
- * @returns Client IP address string.
- */
-export function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-  return 'unknown';
-}
+const STORE_SWEEP_INTERVAL_MS = 60_000;
+const store = new Map<
+  string,
+  { count: number; windowStart: number; expiresAt: number }
+>();
+let nextStoreSweepAt = 0;
 
 /**
  * Applies sliding-window rate limiting for a given client IP and route namespace.
@@ -54,10 +42,20 @@ export function applyRateLimit(
 ): NextResponse | null {
   const key = `${ip}:${route}`;
   const now = Date.now();
+  if (now >= nextStoreSweepAt) {
+    for (const [storedKey, storedEntry] of store) {
+      if (storedEntry.expiresAt <= now) store.delete(storedKey);
+    }
+    nextStoreSweepAt = now + STORE_SWEEP_INTERVAL_MS;
+  }
   const entry = store.get(key);
 
   if (!entry || now - entry.windowStart >= config.windowMs) {
-    store.set(key, { count: 1, windowStart: now });
+    store.set(key, {
+      count: 1,
+      windowStart: now,
+      expiresAt: now + config.windowMs,
+    });
     return null;
   }
 
@@ -78,4 +76,3 @@ export function applyRateLimit(
 
   return null;
 }
-

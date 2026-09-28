@@ -182,10 +182,26 @@ fn test_execute_withdrawal_exact_accounting_deltas() {
     let contract_bal_after = token_client.balance(&contract_id);
 
     assert_eq!(dep_after, dep_before, "total_deposited must be invariant");
-    assert_eq!(with_after, with_before + withdraw_amount, "total_withdrawn delta mismatch");
-    assert_eq!(liab_after, liab_before - withdraw_amount, "total_liabilities delta mismatch");
-    assert_eq!(user_bal_after, user_bal_before + withdraw_amount, "user balance delta mismatch");
-    assert_eq!(contract_bal_after, contract_bal_before - withdraw_amount, "contract balance delta mismatch");
+    assert_eq!(
+        with_after,
+        with_before + withdraw_amount,
+        "total_withdrawn delta mismatch"
+    );
+    assert_eq!(
+        liab_after,
+        liab_before - withdraw_amount,
+        "total_liabilities delta mismatch"
+    );
+    assert_eq!(
+        user_bal_after,
+        user_bal_before + withdraw_amount,
+        "user balance delta mismatch"
+    );
+    assert_eq!(
+        contract_bal_after,
+        contract_bal_before - withdraw_amount,
+        "contract balance delta mismatch"
+    );
 }
 
 #[test]

@@ -24,9 +24,7 @@
 
 use crate::{BatchAdminOp, FiatBridge, FiatBridgeClient};
 use proptest::prelude::*;
-use soroban_sdk::{
-    testutils::Address as _, token, Address, Bytes, Env, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env, Symbol, Vec};
 
 fn create_token_contract<'a>(
     env: &Env,

@@ -105,6 +105,20 @@ vi.mock('@/hooks/usePaystackWebhookStatus', () => ({
   usePaystackWebhookStatus: () => undefined,
 }));
 
+const mockUseOnlineStatus = vi.fn(() => ({
+  isOnline: true,
+  wasOffline: false,
+  resetWasOffline: vi.fn(),
+}));
+
+vi.mock('@/hooks/useOnlineStatus', () => ({
+  useOnlineStatus: () => mockUseOnlineStatus(),
+}));
+
+vi.mock('@/hooks/useMediaQuery', () => ({
+  useMediaQuery: () => false,
+}));
+
 vi.mock('@/lib/networkQueue', () => ({
   getQueuedReadRequestsCount: () => 0,
   subscribeToQueue: () => () => undefined,
@@ -120,20 +134,26 @@ vi.mock('@/lib/stellarContract', () => ({
 vi.mock('@/components/ChatHistorySidebar', () => ({ default: () => null }));
 vi.mock('@/components/ChatInput', () => ({ default: () => null }));
 vi.mock('@/components/ChatMessages', () => ({ default: () => null }));
-vi.mock('@/components/StellarFiatModal', () => ({ default: () => null }));
-vi.mock('@/components/BankDetailsModal', () => ({ default: () => null }));
-vi.mock('@/components/UserSettings', () => ({ default: () => null }));
 vi.mock('@/components/WalletConnectionTimeline', () => ({ default: () => null }));
 vi.mock('@/components/ReceiptDrawerWrapper', () => ({ default: () => null }));
-vi.mock('@/components/SplitViewComparison', () => ({ default: () => null }));
-vi.mock('@/components/ChatSearchPanel', () => ({ default: () => null }));
 vi.mock('@/components/ui/skeleton/SkeletonChat', () => ({ default: () => null }));
 vi.mock('@/components/ui/skeleton/SkeletonSidebar', () => ({ default: () => null }));
-vi.mock('@/components/NotificationsCenter', () => ({
-  default: function NotificationsBoom() {
-    throw new Error('notifications test throw');
+let mockNotificationsCenterThrows = true;
+
+vi.mock('@/components/NotificationsCenterWrapper', () => ({
+  default: () => {
+    if (mockNotificationsCenterThrows) {
+      throw new Error('notifications test throw');
+    }
+    return null;
   },
 }));
+vi.mock('@/components/StellarFiatModalWrapper', () => ({ default: () => null }));
+vi.mock('@/components/BankDetailsModalWrapper', () => ({ default: () => null }));
+vi.mock('@/components/UserSettingsWrapper', () => ({ default: () => null }));
+vi.mock('@/components/SplitViewComparisonWrapper', () => ({ default: () => null }));
+vi.mock('@/components/ChatSearchPanelWrapper', () => ({ default: () => null }));
+vi.mock('@/components/NetworkStatusModalWrapper', () => ({ default: () => null }));
 
 describe('StellarChatInterface', () => {
   beforeEach(() => {
@@ -146,6 +166,14 @@ describe('StellarChatInterface', () => {
       configurable: true,
       value: 1200,
     });
+    // Reset useOnlineStatus mock to default
+    mockUseOnlineStatus.mockReturnValue({
+      isOnline: true,
+      wasOffline: false,
+      resetWasOffline: vi.fn(),
+    });
+    // Reset NotificationsCenterWrapper to throw error by default
+    mockNotificationsCenterThrows = true;
   });
 
   afterEach(() => {
@@ -154,6 +182,7 @@ describe('StellarChatInterface', () => {
   });
 
   it('shows the top-level interface error UI when a header child throws', () => {
+    // Default behavior: NotificationsCenterWrapper throws error
     const consoleErrorSpy = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -164,5 +193,31 @@ describe('StellarChatInterface', () => {
     expect(screen.getByText('common.error_boundary_message')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
     expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('renders correctly when offline at load without hydration mismatch', () => {
+    // Override mock for this test
+    mockUseOnlineStatus.mockReturnValue({
+      isOnline: false,
+      wasOffline: false,
+      resetWasOffline: vi.fn(),
+    });
+    // Allow NotificationsCenterWrapper to render normally
+    mockNotificationsCenterThrows = false;
+
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    render(<StellarChatInterface />);
+
+    // Verify offline banner is shown
+    expect(screen.getByText('common.offline_detected')).toBeTruthy();
+
+    // Verify no hydration warning was logged
+    const hydrationWarnings = consoleWarnSpy.mock.calls.filter((call: unknown[]) =>
+      call[0]?.toString().includes('hydration'),
+    );
+    expect(hydrationWarnings).toHaveLength(0);
+
+    consoleWarnSpy.mockRestore();
   });
 });

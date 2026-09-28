@@ -7,7 +7,6 @@ Successfully implemented automated Futurenet deployment infrastructure for the F
 
 ### 1. Deployment Scripts ✅
 
-#### Shell Script
 - **Location:** `stellar-contracts/scripts/deploy_fiat_bridge_futurenet.sh`
 - **Purpose:** Bash-based deployment script for manual local deployments
 - **Features:**
@@ -15,14 +14,6 @@ Successfully implemented automated Futurenet deployment infrastructure for the F
   - Automatic WASM contract building
   - Contract ID extraction and file output
   - GitHub Actions output integration
-
-#### Rust Binary
-- **Location:** `stellar-contracts/src/bin/deploy_fiat_bridge_futurenet.rs`
-- **Purpose:** Rust-based deployment binary alternative
-- **Features:**
-  - Built-in dependency management
-  - Structured error handling
-  - Soroban CLI integration
 
 ### 2. GitHub Actions Workflow ✅
 
@@ -118,12 +109,6 @@ $GITHUB_OUTPUT: contract_id=CABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
 export FUTURENET_ADMIN_SECRET_KEY="your-key"
 bash stellar-contracts/scripts/deploy_fiat_bridge_futurenet.sh
 cat contract_id_futurenet.txt
-```
-
-### Local Deployment (Rust)
-```bash
-export FUTURENET_ADMIN_SECRET_KEY="your-key"
-cargo run --release --bin deploy_fiat_bridge_futurenet
 ```
 
 ### CI/CD Deployment
