@@ -19,9 +19,11 @@ vi.mock('@/lib/paymentStatusEvents', () => ({
 
 const { GET } = await import('./route');
 
-function makeRequest(query: string) {
+function makeRequest(query: string, signal?: AbortSignal) {
   return new NextRequest(
-    new Request(`http://localhost/api/payment-status/stream${query}`),
+    new Request(`http://localhost/api/payment-status/stream${query}`, {
+      signal,
+    }),
   );
 }
 
@@ -78,5 +80,49 @@ describe('GET /api/payment-status/stream', () => {
 
     expect(res.status).toBe(429);
     expect(subscribeToPaymentStatusMock).not.toHaveBeenCalled();
+  });
+
+  it('cleans up heartbeat and listener on abort', async () => {
+    const unsubscribe = vi.fn();
+    subscribeToPaymentStatusMock.mockReturnValue(unsubscribe);
+
+    const controller = new AbortController();
+    const res = await GET(makeRequest('?sessionId=session-abc', controller.signal));
+
+    expect(res.status).toBe(200);
+    expect(subscribeToPaymentStatusMock).toHaveBeenCalledWith(
+      'session-abc',
+      expect.any(Function),
+    );
+
+    // Simulate client disconnect
+    controller.abort();
+
+    // Wait for the abort event to be processed
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify cleanup was called
+    expect(unsubscribe).toHaveBeenCalled();
+
+    // Tear down the stream
+    await res.body?.cancel();
+  });
+
+  it('sends retry line on connect', async () => {
+    const res = await GET(makeRequest('?sessionId=session-abc'));
+
+    expect(res.status).toBe(200);
+    
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    
+    // Read the first chunk which should contain the retry line
+    const { value } = await reader!.read();
+    const text = decoder.decode(value);
+    
+    expect(text).toContain('retry: 3000');
+    
+    // Tear down the stream
+    await res.body?.cancel();
   });
 });

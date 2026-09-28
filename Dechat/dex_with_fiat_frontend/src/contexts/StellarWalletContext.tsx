@@ -84,6 +84,7 @@ interface StellarWalletContextType {
   clearSessionExpired: () => void;
   mockConnect?: (address: string) => void;
   isNetworkMismatch: boolean;
+  refreshXlmBalance: () => Promise<void>;
 }
 
 const defaultConnection: StellarWalletConnection = {
@@ -296,6 +297,16 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false);
   }, []);
 
+  const refreshXlmBalance = useCallback(async () => {
+    if (!connection.address) return;
+    try {
+      const balance = await fetchXlmBalance(connection.address);
+      setXlmBalance(balance);
+    } catch (error) {
+      console.error('Failed to refresh XLM balance:', error);
+    }
+  }, [connection.address]);
+
   const mockConnect = useCallback((addr: string) => {
     const connectionData = {
       address: addr,
@@ -363,7 +374,26 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <StellarWalletContext.Provider value={contextValue}>
+    <StellarWalletContext.Provider
+      value={{
+        connection,
+        accounts,
+        selectedAccountIndex,
+        xlmBalance,
+        selectAccount,
+        connect,
+        disconnect,
+        signTx,
+        isFreighterInstalled,
+        isLoading,
+        error,
+        sessionExpired,
+        clearSessionExpired,
+        mockConnect,
+        isNetworkMismatch,
+        refreshXlmBalance,
+      }}
+    >
       {children}
     </StellarWalletContext.Provider>
   );
