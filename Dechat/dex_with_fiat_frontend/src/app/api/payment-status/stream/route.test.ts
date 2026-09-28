@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const applyRateLimitMock = vi.fn(() => null);
+const applyRateLimitMock: any = vi.fn(() => null);
 
 vi.mock('@/lib/rateLimit', () => ({
-  applyRateLimit: (...args: unknown[]) => applyRateLimitMock(...args),
+  applyRateLimit: (...args: Parameters<typeof import('@/lib/rateLimit').applyRateLimit>) => applyRateLimitMock(...args),
   getClientIp: vi.fn(() => '127.0.0.1'),
 }));
 
-const subscribeToPaymentStatusMock = vi.fn(() => vi.fn());
+const subscribeToPaymentStatusMock: any = vi.fn(() => vi.fn());
 
 vi.mock('@/lib/paymentStatusEvents', () => ({
-  subscribeToPaymentStatus: (...args: unknown[]) =>
+  subscribeToPaymentStatus: (...args: Parameters<typeof import('@/lib/paymentStatusEvents').subscribeToPaymentStatus>) =>
     subscribeToPaymentStatusMock(...args),
 }));
 

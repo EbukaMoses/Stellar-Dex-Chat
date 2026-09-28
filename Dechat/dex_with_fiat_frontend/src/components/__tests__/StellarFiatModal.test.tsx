@@ -53,7 +53,7 @@ const onClose = vi.fn();
 const onDepositSuccess = vi.fn();
 
 describe('StellarFiatModal', () => {
-  let mockedContract: Awaited<ReturnType<typeof import('@/lib/stellarContract')>>;
+  let mockedContract: any;
 
   beforeEach(async () => {
     mockedContract = await import('@/lib/stellarContract');
@@ -140,8 +140,8 @@ describe('StellarFiatModal fiat estimate cancellation pattern (Issue #709)', () 
     });
 
     // Run the async work
-    const asyncWork = fetchPromise.then((result) => {
-      setState(result);
+    const asyncWork = fetchPromise.then(() => {
+      setState();
     });
 
     // Simulate unmount before the fetch completes

@@ -1,4 +1,4 @@
-import { env } from '@/lib/env';
+import { serverEnv as env } from '@/lib/serverEnv';
 
 export function requireAdminAuth(request: Request): Response | null {
   const configuredSecret = env.ADMIN_SECRET;

@@ -7,7 +7,8 @@ test.describe('Complete Fiat Transfer Flow', () => {
       const mockAddress = 'GD5DJQD7KGYRY4TSK4K2V5J2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2T2D2J2XQK2';
       const mockTxXdr = 'AAAAAgAAAABzZXJ2aWNlX3BvaW50X2hvc3QAAAAAAAAAAAAA';
 
-      window.freighter = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).freighter = {
         isConnected: async () => ({ isConnected: true }),
         getAddress: async () => ({
           address: mockAddress,

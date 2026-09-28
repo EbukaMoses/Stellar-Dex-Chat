@@ -89,8 +89,8 @@ describe('BankDetailsModal - Zod Schema (unit)', () => {
 describe('BankDetailsModal - Zod Validation (integration)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      if (url.includes('/api/banks')) {
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: string | Request | URL) => {
+      if (String(url).includes('/api/banks')) {
         return { ok: true, json: async () => ({ success: true, data: [{ id: 1, name: 'Test Bank', code: '001', active: true }] }) } as Response;
       }
       throw new Error(`Unhandled: ${url}`);
@@ -122,11 +122,11 @@ describe('BankDetailsModal - Zod Validation (integration)', () => {
   });
 
   it('clears error when a valid 10-digit number is entered', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      if (url.includes('/api/banks')) {
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: string | Request | URL) => {
+      if (String(url).includes('/api/banks')) {
         return { ok: true, json: async () => ({ success: true, data: [{ id: 1, name: 'Test Bank', code: '001', active: true }] }) } as Response;
       }
-      if (url.includes('/api/verify-account')) {
+      if (String(url).includes('/api/verify-account')) {
         return { ok: true, json: async () => ({ success: true, data: { account_name: 'Test Account' } }) } as Response;
       }
       throw new Error(`Unhandled: ${url}`);
@@ -157,11 +157,11 @@ describe('BankDetailsModal - Zod Validation (integration)', () => {
 describe('BankDetailsModal - Zod saveCustomName inline error', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      if (url.includes('/api/banks')) {
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: string | Request | URL) => {
+      if (String(url).includes('/api/banks')) {
         return { ok: true, json: async () => ({ success: true, data: [{ id: 1, name: 'Test Bank', code: '001', active: true }] }) } as Response;
       }
-      if (url.includes('/api/verify-account')) {
+      if (String(url).includes('/api/verify-account')) {
         return { ok: true, json: async () => ({ success: true, data: { account_name: 'John Doe' } }) } as Response;
       }
       throw new Error(`Unhandled: ${url}`);

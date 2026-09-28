@@ -16,8 +16,9 @@ import {
   requestAccess,
   setAllowed,
 } from '@stellar/freighter-api';
-import { Networks } from '@stellar/stellar-sdk';
-import { fetchXlmBalance } from '@/lib/stellarContract';
+
+/** Canonical Stellar testnet passphrase — avoids importing the full SDK at module scope. */
+const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const STORAGE_KEY_ADDRESS = 'stellar_address';
@@ -164,7 +165,10 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
               network: netResult.network || 'TESTNET',
               networkPassphrase: netResult.networkPassphrase || '',
             });
-            fetchXlmBalance(addrResult.address).then(setXlmBalance).catch(() => {});
+            import('@/lib/stellarContract')
+              .then(({ fetchXlmBalance }) => fetchXlmBalance(addrResult.address))
+              .then(setXlmBalance)
+              .catch(() => {});
           }
         })
         .catch(() => {});
@@ -186,7 +190,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       const accountsResult = await getFreighterAccounts();
 
       const passphrase = netResult.networkPassphrase || '';
-      if (passphrase !== Networks.TESTNET) {
+      if (passphrase !== TESTNET_PASSPHRASE) {
         setError('Please switch Freighter to Testnet');
         setConnection(defaultConnection);
         setAccounts([]);
@@ -222,7 +226,10 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
         network: netResult.network || 'TESTNET',
         networkPassphrase: passphrase,
       });
-      fetchXlmBalance(addr).then(setXlmBalance).catch(() => {});
+      import('@/lib/stellarContract')
+        .then(({ fetchXlmBalance }) => fetchXlmBalance(addr))
+        .then(setXlmBalance)
+        .catch(() => {});
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to connect Freighter',
@@ -271,7 +278,10 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
         }));
         localStorage.setItem(STORAGE_KEY_ADDRESS, selectedAccount.address);
         localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()));
-        fetchXlmBalance(selectedAccount.address).then(setXlmBalance).catch(() => {});
+        import('@/lib/stellarContract')
+          .then(({ fetchXlmBalance }) => fetchXlmBalance(selectedAccount.address))
+          .then(setXlmBalance)
+          .catch(() => {});
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to switch account',
@@ -291,7 +301,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       publicKey: addr,
       isConnected: true,
       network: 'TESTNET',
-      networkPassphrase: 'Test SDF Network ; September 2015',
+      networkPassphrase: TESTNET_PASSPHRASE,
     };
     setConnection(connectionData);
     localStorage.setItem(STORAGE_KEY_ADDRESS, addr);

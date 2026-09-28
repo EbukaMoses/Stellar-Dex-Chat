@@ -32,7 +32,7 @@ describe('useFeatureFlag', () => {
       ({ flag }) => useFeatureFlag(flag),
       {
         initialProps: {
-          flag: 'enableAdminReconciliation' as const,
+          flag: 'enableAdminReconciliation' as 'enableAdminReconciliation' | 'enableConversionReminders',
         },
       }
     );

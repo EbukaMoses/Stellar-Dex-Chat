@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import net from 'node:net';
-import { env } from '@/lib/env';
+import { serverEnv as env } from '@/lib/serverEnv';
 
 export interface RequestWithIp {
   headers: Headers;

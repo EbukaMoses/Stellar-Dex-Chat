@@ -8,6 +8,8 @@ import NotificationsCenter from '../NotificationsCenter';
 const mockMarkAllAsRead = vi.fn();
 const mockClearNotifications = vi.fn();
 const mockMarkAsRead = vi.fn();
+const mockAddNotification = vi.fn();
+const mockSetNotifications = vi.fn();
 const emptyNotifications: ReturnType<typeof useNotifications>['notifications'] = [];
 
 function resetNotificationsMock() {
@@ -17,6 +19,8 @@ function resetNotificationsMock() {
     markAsRead: mockMarkAsRead,
     markAllAsRead: mockMarkAllAsRead,
     clearNotifications: mockClearNotifications,
+    addNotification: mockAddNotification,
+    setNotifications: mockSetNotifications,
   }));
 }
 
@@ -27,6 +31,8 @@ vi.mock('@/hooks/useNotifications', () => ({
     markAsRead: mockMarkAsRead,
     markAllAsRead: mockMarkAllAsRead,
     clearNotifications: mockClearNotifications,
+    addNotification: mockAddNotification,
+    setNotifications: mockSetNotifications,
   })),
 }));
 
@@ -93,6 +99,8 @@ describe('NotificationsCenter – rendering', () => {
       markAsRead: mockMarkAsRead,
       markAllAsRead: mockMarkAllAsRead,
       clearNotifications: mockClearNotifications,
+      addNotification: mockAddNotification,
+      setNotifications: mockSetNotifications,
     });
 
     render(<NotificationsCenter />);
@@ -149,6 +157,8 @@ describe('NotificationsCenter – keyboard shortcuts', () => {
       markAsRead: mockMarkAsRead,
       markAllAsRead: mockMarkAllAsRead,
       clearNotifications: mockClearNotifications,
+      addNotification: mockAddNotification,
+      setNotifications: mockSetNotifications,
     });
 
     render(<NotificationsCenter />);
@@ -165,6 +175,8 @@ describe('NotificationsCenter – keyboard shortcuts', () => {
       markAsRead: mockMarkAsRead,
       markAllAsRead: mockMarkAllAsRead,
       clearNotifications: mockClearNotifications,
+      addNotification: mockAddNotification,
+      setNotifications: mockSetNotifications,
     });
 
     render(<NotificationsCenter />);
@@ -181,6 +193,8 @@ describe('NotificationsCenter – keyboard shortcuts', () => {
       markAsRead: mockMarkAsRead,
       markAllAsRead: mockMarkAllAsRead,
       clearNotifications: mockClearNotifications,
+      addNotification: mockAddNotification,
+      setNotifications: mockSetNotifications,
     });
 
     render(<NotificationsCenter />);
@@ -197,6 +211,8 @@ describe('NotificationsCenter – keyboard shortcuts', () => {
       markAsRead: mockMarkAsRead,
       markAllAsRead: mockMarkAllAsRead,
       clearNotifications: mockClearNotifications,
+      addNotification: mockAddNotification,
+      setNotifications: mockSetNotifications,
     });
 
     render(<NotificationsCenter />);

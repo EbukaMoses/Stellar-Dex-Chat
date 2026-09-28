@@ -285,7 +285,8 @@ describe('SplitViewComparison – race condition regression (#523)', () => {
 
     await waitFor(() => {
       const calls = splitViewAddToastMock.mock.calls;
-      const severities = calls.map((c: [{ severity: string }]) => c[0].severity);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const severities = calls.map((c: any[]) => (c[0] as { severity: string }).severity);
       // Both the warning and the success toast must have been emitted
       expect(severities).toContain('warning');
       expect(severities).toContain('success');
