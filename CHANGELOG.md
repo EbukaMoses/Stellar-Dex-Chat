@@ -418,6 +418,7 @@ Repo Avatar
 - **contract:** Add init replay protection
 - **contract:** Add bounds check to set_limit_max_cap and circuit breaker invariant tests
 - **contract,frontend:** Add execute_withdrawal invariants and frontend UX updates
+- **frontend:** Add CSP and security headers in next.config.ts
 - **frontend:** Add keyboard shortcuts to Message.tsx
 - **contract:** Guard withdraw with circuit breaker
 - **contract:** Record upgrade proposal timelock
@@ -857,6 +858,11 @@ Repo Avatar
 - **contract:** Restore the nonce storage keys a merge dropped
 - Test(contract): add Soroban invariant tests for execute_upgr
 - Test(contract): add Soroban invariant tests for execute_upgr
+- **contract:** Correct edge case validation in rescue_token
+- **contract:** Add edge case validation and tests for pause/unpause/rescue_token + test(frontend): add Playwright E2E coverage for AuditTable
+- **frontend:** Implement server-verified admin session with nonce/signature flow
+- **frontend:** Handle request.signal abort in payment-status SSE route
+- **frontend:** Refresh wallet XLM balance after deposits and use context balance
 - **frontend:** Avoid remote font fetch during build
 - **frontend:** Remove unused split view bindings
 - **frontend:** Guard bridge stats during hydration
@@ -865,8 +871,6 @@ Repo Avatar
 - **frontend:** Resolve split view build lint errors
 - **frontend:** Keep retry queue banner during reconnect
 - **contract:** Correct edge case validation in initialize
-- **contract:** Correct edge case validation in rescue_token
-- **contract:** Add edge case validation and tests for pause/unpause/rescue_token + test(frontend): add Playwright E2E coverage for AuditTable
 - **contract:** Correct edge case validation in upgrade
 - **ci:** Correct docker path validation regex to not match Dechat/ paths
 - **frontend:** Resolve build lint errors
@@ -1143,6 +1147,7 @@ Repo Avatar
 - Add implementation review for heartbeat nonce-based replay protection
 - Add implementation review for fee vault typed reads
 - Improve inline documentation and architectural guides for overflow prevention
+- **contract:** Add regression tests for rescue_token edge cases
 - **contract:** Add Soroban invariant tests for get_withdrawal_request
 - **contract:** Add Soroban invariant tests for cancel_withdrawal
 - **contract:** Add Soroban invariant tests for set_fee_recipient
@@ -1152,7 +1157,6 @@ Repo Avatar
 - **frontend:** Use pnpm 9 for build check
 - Fix duplicated/malformed doc comment on get_escrow_storage_version
 - Improve inline documentation for overflow prevention
-- **contract:** Add regression tests for rescue_token edge cases
 - Update test calls for withdraw_fees nonce parameter
 - Record issue 595 verification
 - **#1451-1454:** Consolidate frontend CI, fix env vars, reconcile .env.example, fix docker paths
@@ -1186,6 +1190,7 @@ Repo Avatar
 - **repo:** Standardise on pnpm and delete the npm lockfiles and npm-only config
 - **repo:** Remove committed build output, logs and scratch files & fix the root .gitignore
 - Fix formatting with cargo fmt
+- **changelog:** Update changelog [skip ci]
 
 ### Deprecated
 
