@@ -45,10 +45,10 @@ export const paystackProvider: PayoutProvider = {
       return mockVerification;
     }
 
-    const response = await axios.get(
-      `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
-      { headers: paystackHeaders() },
-    );
+    const response = await axios.get('https://api.paystack.co/bank/resolve', {
+      headers: paystackHeaders(),
+      params: { account_number: accountNumber, bank_code: bankCode },
+    });
 
     if (response.data?.status && response.data?.data) {
       return {
