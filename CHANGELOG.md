@@ -886,6 +886,7 @@ Repo Avatar
 - **contract:** Make deny_address and remove_denied_address idempotent
 - **contract:** Stop token allowlist indexes from accumulating duplicates
 - **frontend:** StellarChatInterface reads navigator.onLine during render and duplicates the useOnlineStatus/useMediaQuery hooks
+- **frontend:** FAQ substring matching intercepts transactional messages before the parser and AI run
 
 ### Changed
 
@@ -1178,6 +1179,13 @@ Repo Avatar
 - **contract:** Add invariant tests for the token allowlist entrypoints
 - **contract:** Correct the module table in INVARIANT_TESTING.md
 - Add pull request description
+- **changelog:** Update changelog [skip ci]
+- **repo:** Delete the stray top-level stellar-contracts/ and dex_with_fiat_frontend/ directories and the dangling Stellar-Dex-Chat gitlink
+- **repo:** Keep a single Futurenet deploy implementation (drop the root script copy and the Rust bin)
+- Pin Node and pnpm versions in one place (packageManager, engines, .nvmrc)
+- **repo:** Standardise on pnpm and delete the npm lockfiles and npm-only config
+- **repo:** Remove committed build output, logs and scratch files & fix the root .gitignore
+- Fix formatting with cargo fmt
 
 ### Deprecated
 
@@ -1679,6 +1687,19 @@ cargo test 457 passed, 1 failed — test_execute_upgrade_after_delay_succeeds,
 which fails identically on main because its fixture helper hardcodes a
 soroban-sdk-25.3.0 registry path while the lockfile pins 25.3.2. Main changed
 no frontend files this round.
+- Remove legacy FeeWithdrawalNonce key and migrate_fee_withdrawal_nonce entrypoint
+
+- Remove DataKey::FeeWithdrawalNonce from DataKey enum
+- Remove migrate_fee_withdrawal_nonce function from FiatBridge
+- Remove test_migrate_fee_withdrawal_nonce test file
+- Remove Step 4 from docs/UPGRADE_RUNBOOK.md (Fee-Withdrawal Nonce Migration)
+
+This follows up on #1422. Once the per-caller FeeWithdrawalNonceByCaller key has
+been migrated on all deployed contracts, the legacy global key and its migration
+entrypoint are dead weight in the ABI and WASM.
+- Merge pull request #1559 from anifast-123/fix/1552-remove-legacy-fee-withdrawal-nonce
+
+remove legacy FeeWithdrawalNonce key and migrate_fee_withdrawal_nonce…
 
 ### Security
 
