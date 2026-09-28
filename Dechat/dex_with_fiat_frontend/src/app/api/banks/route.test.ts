@@ -17,7 +17,7 @@ const { GET } = await import('./route');
 
 function request(query = '', ip = '198.51.100.100') {
   return new NextRequest(`http://localhost/api/banks${query}`, {
-    headers: { 'x-forwarded-for': ip },
+    headers: { 'cf-connecting-ip': ip },
   });
 }
 

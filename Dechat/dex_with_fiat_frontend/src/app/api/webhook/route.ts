@@ -127,33 +127,22 @@ export async function POST(request: NextRequest) {
       .createHash('sha256')
       .update(payload)
       .digest('hex');
-    const replayKey = String(
-      event?.data?.id || event?.data?.reference || payloadHash,
-    );
-
-    if (isReplayEvent(replayKey)) {
-      const cache = replayCacheStats();
-      telemetry.addLog(
-        span.spanId,
-        'warn',
-        'Webhook replay detected, ignoring event',
-        {
-          replayKey,
-          eventType: event.event,
-          cacheSize: cache.size,
-          cacheTtlMs: cache.ttlMs,
-          cacheMaxSize: cache.maxSize,
-        },
-      );
-      console.warn('Webhook replay detected and ignored', {
-        replayKey,
+    const dataId = event?.data?.id;
+    const dataRef = event?.data?.reference;
+    if (!dataId && !dataRef) {
+      telemetry.addLog(span.spanId, 'error', 'Missing event data id and reference', {
         eventType: event.event,
       });
-
-      const response = NextResponse.json({ received: true, duplicate: true });
-      telemetry.setTraceHeaders(response.headers, traceContext);
-      return response;
+      telemetry.finishSpan(span.spanId, {
+        success: false,
+        error: 'Missing event data id and reference',
+      });
+      return NextResponse.json(
+        { message: 'Event data must contain id or reference' },
+        { status: 400 },
+      );
     }
+    const replayKey = `${event.event}:${dataId ?? dataRef}`;
 
     telemetry.addLog(span.spanId, 'info', 'Webhook signature verified', {
       eventType: event.event,
@@ -271,6 +260,8 @@ export async function POST(request: NextRequest) {
         });
         console.log('Unhandled webhook event:', event.event);
     }
+
+    isReplayEvent(replayKey);
 
     telemetry.addLog(span.spanId, 'info', 'Webhook processing completed', {
       eventType: event.event,

@@ -6,7 +6,10 @@ const frontendDir = path.join(rootDir, "Dechat/dex_with_fiat_frontend");
 const toPosix = (value) => value.split(path.sep).join("/");
 
 module.exports = {
-  "Dechat/stellar-contracts/**/*.rs": () => "npm run precommit:clippy",
+  "Dechat/stellar-contracts/**/*.rs": [
+    () => "cd Dechat/stellar-contracts && cargo fmt -- --check",
+    () => "npm run precommit:clippy",
+  ],
   "Dechat/dex_with_fiat_frontend/**/*.{ts,tsx}": (files) => {
     if (!files.length) return [];
     const fileArgs = files

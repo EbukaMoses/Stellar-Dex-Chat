@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 vi.mock('server-only', () => ({}));
 
 const applyRateLimitMock: any = vi.fn(() => null);
+const applyRateLimitMock = vi.fn<(...args: unknown[]) => null>(() => null);
 
 vi.mock('@/lib/rateLimit', () => ({
   applyRateLimit: (...args: Parameters<typeof import('@/lib/rateLimit').applyRateLimit>) => applyRateLimitMock(...args),

@@ -115,6 +115,7 @@ describe('TransactionAmountDisplay', () => {
       isLoading: false,
       hasError: false,
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     const { rerender } = render(<TransactionAmountDisplay amount={100} asset="XLM" />);
@@ -129,6 +130,7 @@ describe('TransactionAmountDisplay', () => {
       isLoading: false,
       hasError: false,
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     await act(async () => {
@@ -325,6 +327,7 @@ describe('TransactionAmountDisplay - optimistic UI (#839)', () => {
       originalAmount: 100,
       originalCurrency: 'XLM',
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     render(<TransactionAmountDisplay amount={100} asset="XLM" />);
@@ -347,6 +350,7 @@ describe('TransactionAmountDisplay - optimistic UI (#839)', () => {
       originalAmount: 100,
       originalCurrency: 'XLM',
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     const { rerender } = render(<TransactionAmountDisplay amount={100} asset="XLM" />);
@@ -360,6 +364,7 @@ describe('TransactionAmountDisplay - optimistic UI (#839)', () => {
       originalAmount: 200,
       originalCurrency: 'XLM',
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     await act(async () => {
@@ -385,6 +390,7 @@ describe('TransactionAmountDisplay - optimistic UI (#839)', () => {
       originalAmount: 50,
       originalCurrency: 'XLM',
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     render(<TransactionAmountDisplay amount={50} asset="XLM" />);
@@ -409,6 +415,7 @@ describe('TransactionAmountDisplay - optimistic UI (#839)', () => {
       originalAmount: 100,
       originalCurrency: 'XLM',
       forceRefresh: vi.fn(),
+      forceRefresh: async () => {},
     });
 
     render(<TransactionAmountDisplay amount={100} asset="XLM" />);

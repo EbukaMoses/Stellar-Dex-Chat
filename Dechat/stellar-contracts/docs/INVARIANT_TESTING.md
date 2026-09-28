@@ -67,40 +67,85 @@ bug in `withdraw_fees`).
 
 ## Test Organisation
 
-Invariant test modules live in `src/` alongside the contract code:
+Invariant test modules live in `src/` alongside the contract code. A file in
+`src/` is compiled only if `lib.rs` declares it with a `mod` line. An
+undeclared file is never compiled, whatever attributes it carries, so its
+tests never run.
 
-| File | Scope | Registration |
-|------|-------|-------------|
-| `test_deposit_invariants.rs` | deposit accounting invariants | standalone (`#![cfg(test)]`) |
-| `test_pause_invariants.rs` | pause/unpause state transitions | standalone (`#![cfg(test)]`) |
-| `test_withdraw_fees_invariants.rs` | fee withdrawal accounting | standalone (`#![cfg(test)]`) |
-| `test_approve_multisig_action_invariants.rs` | multisig approval list | module in `lib.rs` |
-| `test_revoke_multisig_approval_invariants.rs` | multisig approval revocation | module in `lib.rs` |
-| `test_execute_multisig_action_invariants.rs` | multisig threshold/execution | module in `lib.rs` |
-| `test_get_multisig_proposal_invariants.rs` | read-only proposal accessor | module in `lib.rs` |
-| `test_get_multisig_signers_invariants.rs` | read-only signers accessor | module in `lib.rs` |
-| `test_propose_upgrade_invariants.rs` | governed upgrade proposal state | module in `lib.rs` |
+### Registered invariant modules
 
-### Standalone vs. Module Registration
+Each of these is declared in `lib.rs` behind `#[cfg(test)]`:
 
-Two registration styles are in use:
+| Module | Scope |
+|--------|-------|
+| `test_approve_multisig_action_invariants` | multisig approval list |
+| `test_revoke_multisig_approval_invariants` | multisig approval revocation |
+| `test_propose_multisig_action_invariants` | multisig proposal creation |
+| `test_get_multisig_proposal_invariants` | read-only proposal accessor |
+| `test_propose_upgrade_invariants` | governed upgrade proposal state |
+| `test_execute_upgrade_invariants` | `execute_upgrade` rejection codes |
+| `test_execute_upgrade_timelock_invariants` | upgrade timelock boundary and inertness |
+| `test_request_withdrawal_invariants` | withdrawal-queue entry accounting |
+| `test_execute_withdrawal_invariants` | withdrawal execution accounting |
+| `test_cancel_withdrawal_invariants` | withdrawal cancellation and liability release |
+| `test_reclaim_expired_withdrawal_invariants` | reclaiming expired withdrawal requests |
+| `test_set_withdrawal_expiry_invariants` | withdrawal expiry configuration |
+| `test_get_withdrawal_request_invariants` | read-only withdrawal request accessor |
+| `test_get_next_priority_withdrawal_invariants` | read-only risk-tier scheduler |
+| `test_set_operator_invariants` | operator roster, cap and nonces |
+| `test_is_denied_invariants` | read-only denylist lookup |
+| `test_denylist_invariants` | `deny_address` / `remove_denied_address` and denylist enumeration |
+| `test_token_allowlist_invariants` | per-token allowlist setters, deposit gate and enumeration |
+| `test_set_fee_recipient_invariants` | fee recipient configuration |
+| `test_reset_circuit_breaker_invariants` | manual circuit breaker reset |
+| `test_set_circuit_breaker_threshold_invariants` | circuit breaker threshold configuration |
+| `test_set_circuit_breaker_reset_window_invariants` | circuit breaker auto-reset window |
+| `test_migrate_escrow_invariants` | escrow storage migration |
+| `test_get_deploy_config_hash_invariants` | read-only deployment config hash |
 
-- **Standalone files** (`test_deposit_invariants.rs`, `test_pause_invariants.rs`,
-  `test_withdraw_fees_invariants.rs`) carry an inner `#![cfg(test)]` attribute
-  and are compiled only as part of the test build. They import the contract via
-  `use crate::{FiatBridge, FiatBridgeClient, ...}`.
-- **Registered modules** (the multisig and upgrade files) are declared in
-  `lib.rs` behind `#[cfg(test)]`. They deliberately **omit** the inner
-  `#![cfg(test)]` to keep clippy's `duplicated_attributes` lint quiet.
+`lib.rs` also registers other test modules that are not invariant suites,
+such as `test`, `test_init_validation`, `test_heartbeat_batch` and
+`test_withdraw_circuit_breaker`. Treat the `mod` lines at the end of
+`lib.rs` as the source of truth.
 
-When adding a new invariant test, follow the registration style of the closest
-existing module and keep the convention consistent within the file.
+### Unregistered files
+
+Some `test_*.rs` files in `src/` are not declared in `lib.rs` and are
+therefore not compiled. Among them are `test_deposit_invariants.rs`,
+`test_pause_invariants.rs`, `test_withdraw_fees_invariants.rs`,
+`test_execute_multisig_action_invariants.rs` and
+`test_get_multisig_signers_invariants.rs`. The inner `#![cfg(test)]` some of
+them carry does not change this: without a `mod` line the compiler never
+reads the file. Registering them is tracked in issue #1380. Until that lands,
+the suites described below for these files do not run in CI.
+
+### Adding a new test module
+
+1. Create `src/test_<entry_point>_invariants.rs`. Start it with a `//!` doc
+   comment describing the invariants it asserts.
+2. Declare it at the end of `lib.rs`:
+
+   ```rust
+   #[cfg(test)]
+   mod test_<entry_point>_invariants;
+   ```
+
+   Without this line the file is silently ignored.
+3. Leave out an inner `#![cfg(test)]`. The `#[cfg(test)]` on the `mod` line
+   already gates the file, so a second one is redundant. Some older modules
+   still carry one; it is harmless.
+4. The crate is `no_std`. Add `extern crate std;` if the module uses `std`
+   (for example `std::vec::Vec` or `proptest`).
+5. Import the contract through the crate root, for example
+   `use crate::{DataKey, Error, FiatBridge, FiatBridgeClient};`.
+6. Run `cargo test <module_name>` and check that the new tests appear in the
+   output. If they don't, the `mod` line is missing.
 
 ---
 
-## What Each Suit Covers
+## What Each Suite Covers
 
-### Deposit Invariants (`test_deposit_invariants.rs`)
+### Deposit Invariants (`test_deposit_invariants.rs`, not yet registered)
 
 Re-asserts all three core accounting invariants after:
 
@@ -111,7 +156,7 @@ Re-asserts all three core accounting invariants after:
 - a deposit after a request-withdrawal (liabilities increase),
 - zero-withdrawal scenarios.
 
-### Pause/Unpause Invariants (`test_pause_invariants.rs`)
+### Pause/Unpause Invariants (`test_pause_invariants.rs`, not yet registered)
 
 Verifies that pausing:
 
@@ -124,7 +169,7 @@ Verifies that pausing:
 - survives a full pause → unpause → operate cycle without breaking
   accounting invariants.
 
-### Fee Withdrawal Invariants (`test_withdraw_fees_invariants.rs`)
+### Fee Withdrawal Invariants (`test_withdraw_fees_invariants.rs`, not yet registered)
 
 Ensures `withdraw_fees` — which moves *untracked* accrued fees out of the
 contract — never eats into tracked `net_deposited`. Re-asserts invariants 1–3
@@ -138,12 +183,77 @@ The multisig files assert state-transition and access-control invariants:
   no mutation of immutable proposal fields, rejection leaves storage unchanged.
 - **`revoke_multisig_approval`**: exact inverse of approval; rejects
   non-signers and leaves state unchanged on error.
-- **`execute_multisig_action`**: one-way `executed` flag (no double execution),
-  threshold gate, failure paths leave state untouched, accounting untouched.
+- **`execute_multisig_action`** (not yet registered): one-way `executed` flag
+  (no double execution), threshold gate, failure paths leave state untouched,
+  accounting untouched.
 - **`get_multisig_proposal`**: read-only purity, faithful reflection of writes,
   `None` for unknown ids without creating entries.
-- **`get_multisig_signers`**: read-only accessor purity, empty vector on
-  uninitialised contract.
+- **`get_multisig_signers`** (not yet registered): read-only accessor purity,
+  empty vector on uninitialised contract.
+
+### Withdrawal Queue Invariants
+
+Three suites cover the queue end to end.
+
+**`test_request_withdrawal_invariants.rs`** — the only entry point into the
+queue. Re-asserts all three core accounting invariants after each accepted
+request and pins down:
+
+- liabilities move by exactly the requested amount and never past
+  `net_deposited`,
+- `request_id`s are allocated once, in order, and never recycled — including
+  after a cancellation,
+- the stored `WithdrawRequest` mirrors its inputs, with
+  `unlock_ledger = queued_ledger + lock_period`,
+- every rejection path rolls back wholesale. This matters especially here:
+  the entry point writes the queue entry, bumps `next_request_id` and updates
+  both queue lengths *before* it validates the token registry and available
+  funds, so a `TokenNotWhitelisted` or `InsufficientFunds` rejection is the
+  sharpest available test that failures leave no partial state.
+
+**`test_get_next_priority_withdrawal_invariants.rs`** — the read-only risk-tier
+scheduler:
+
+- read-only purity (repeated calls are stable and mutate nothing),
+- referential integrity: a returned id always names a live request,
+- lowest occupied tier wins over insertion order; FIFO within that tier,
+- cancelled requests are never handed back out,
+- rejected and unauthorised mutations never shift the priority head.
+
+Note the deliberate compute-budget bound the suite documents: the scan covers
+only `min(next_request_id, 256)` tiers, so a request filed in a tier above
+that window is invisible to the scheduler until the window widens.
+
+**`test_set_operator_invariants.rs`** — the operator roster:
+
+- `is_operator` agrees with the flag written, and no bystander's flag moves,
+- the `operator_count` carried by `SetOperatorEvent` always equals the number
+  of set flags and never exceeds `max_operators`,
+- grant and revoke are exact inverses; re-activation never double-counts,
+- nonces advance by exactly one on success and are untouched by every
+  rejection, so a failure can never burn or skip a nonce,
+- role-confusion guards (admin, contract address) and the cap rejection leave
+  no flag, nonce or event behind.
+
+### Denylist Invariants (`test_denylist_invariants.rs`)
+
+- `is_denied` and `get_denied_addresses` agree after any sequence of deny and
+  remove calls, with no duplicate entries (property test),
+- `DeniedCount` grows only when a new address is denied,
+- `deposit`, `withdraw` and `request_withdrawal` return `AddressDenied` for a
+  denied address and succeed again after removal,
+- `DenyAddressEvent` / `DenyRemovedEvent` fire once per real state change,
+- non-admin callers are rejected and leave no trace.
+
+### Token Allowlist Invariants (`test_token_allowlist_invariants.rs`)
+
+- with a token's allowlist enabled, unlisted depositors get `NotAllowed`;
+  add lets them in and remove blocks them again,
+- one token's allowlist never affects another token's deposits,
+- `get_token_allowlist` pages over live pairs only, with no duplicates,
+- `get_token_allowlist_enabled` keeps one current entry per token however
+  often it is toggled,
+- non-admin callers are rejected and leave no trace.
 
 ### Upgrade Invariants (`test_propose_upgrade_invariants.rs`)
 
@@ -153,16 +263,40 @@ The multisig files assert state-transition and access-control invariants:
 - re-proposing replaces the pending proposal wholesale,
 - accounting/config surface is never disturbed.
 
+### Upgrade Timelock Invariants (`test_execute_upgrade_timelock_invariants.rs`)
+
+`test_execute_upgrade_invariants.rs` covers `execute_upgrade`'s two rejection
+codes and the "no proposal, no state change" property. This suite takes the
+timelock itself as its subject — the guard `sequence < executable_after` that
+decides *when* a proposal becomes executable:
+
+- the lock still holds at `executable_after - 1` and releases at exactly
+  `executable_after`, for any configured delay,
+- a rejected execution is inert: the pending proposal keeps its hash and
+  deadline verbatim and the accounting surface is untouched, however many
+  times it is retried,
+- a cancelled proposal stays unexecutable even past its original deadline,
+- re-proposing re-arms the lock, so an elapsed deadline cannot be reused to
+  execute the replacement early.
+
+The success path is deliberately out of scope here: a real `execute_upgrade`
+calls `update_current_contract_wasm`, which the test host only accepts for an
+uploaded hash. The boundary tests therefore assert that the call is no longer
+refused *by the timelock*, rather than depending on the SDK's version-pinned
+doctest WASM fixture. `test::test_execute_upgrade_after_delay_succeeds` covers
+the full success path where that fixture is available.
+
 ---
 
 ## Property-Based vs. Example-Based
 
 Most invariant tests are *example-based*: they construct a concrete scenario
-and assert the invariant holds. Several modules (e.g. the multisig
-threshold/approval suites and `test_get_multisig_signers_invariants.rs`) also
-use **`proptest`** to sweep the signer-count / threshold / approval-count input
-space, guaranteeing the invariant holds for a range of configurations rather
-than a single hand-picked one.
+and assert the invariant holds. Several modules (e.g. the multisig approval
+suite, `test_cancel_withdrawal_invariants.rs` and
+`test_denylist_invariants.rs`) also use **`proptest`** to sweep an input
+space, such as signer counts and thresholds, or random sequences of deny and
+remove calls. This checks that the invariant holds for a range of inputs
+rather than a single hand-picked one.
 
 When extending a property-based suite:
 
@@ -185,7 +319,8 @@ When adding a new state-changing entry point, follow this pattern:
    re-assert read-purity, immutability of unrelated state, and one-way flags.
 2. **Create a dedicated `test_<entry_point>_invariants.rs`** (or extend an
    existing one) with a module-level `//!` doc comment describing the
-   invariants asserted and any authorisation quirks.
+   invariants asserted and any authorisation quirks, and **declare it in
+   `lib.rs`** as described in [Adding a new test module](#adding-a-new-test-module).
 3. **Reuse the setup helpers** (`setup_bridge`, `setup_multisig`) rather than
    duplicating registration/init logic.
 4. **Assert, don't just exercise.** Every test name should end with the
@@ -211,7 +346,8 @@ When adding a new state-changing entry point, follow this pattern:
 - [ ] Is there a failure-path test proving rejected calls leave state
       unchanged?
 - [ ] Is read-only purity asserted for view functions?
-- [ ] Is the module registered consistently (standalone vs. `lib.rs` module)?
+- [ ] Is the module declared with `#[cfg(test)] mod ...;` in `lib.rs`, and do
+      its tests show up in `cargo test` output?
 - [ ] Is the module-level doc comment updated with the invariants asserted?
 - [ ] Do `cargo test` and `cargo clippy --all-targets --all-features --
       -D warnings` pass?

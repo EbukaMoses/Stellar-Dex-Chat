@@ -1,15 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, cleanup, waitFor } from '@testing-library/react';
 import { useMediaQuery } from '../useMediaQuery';
 
 describe('useMediaQuery', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let matchMediaMock: any;
+  let matchMediaMock: Mock<(query: string) => MediaQueryList>;
   let listeners: Array<(event: MediaQueryListEvent) => void>;
 
   beforeEach(() => {
     listeners = [];
-    matchMediaMock = vi.fn((query: string) => ({
+    matchMediaMock = vi.fn<(query: string) => MediaQueryList>((query: string) => ({
       matches: false,
       media: query,
       addEventListener: vi.fn((event: string, handler: (e: MediaQueryListEvent) => void) => {
@@ -21,7 +22,7 @@ describe('useMediaQuery', () => {
           if (index > -1) listeners.splice(index, 1);
         }
       }),
-    }));
+    }) as unknown as MediaQueryList);
 
     window.matchMedia = matchMediaMock;
   });
@@ -40,7 +41,7 @@ describe('useMediaQuery', () => {
       media: '(min-width: 768px)',
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    });
+    } as unknown as MediaQueryList);
 
     const { result } = renderHook(() => useMediaQuery('(min-width: 768px)'));
     expect(result.current).toBe(false);
@@ -52,7 +53,7 @@ describe('useMediaQuery', () => {
       media: '(min-width: 768px)',
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    });
+    } as unknown as MediaQueryList);
 
     const { result } = renderHook(() => useMediaQuery('(min-width: 768px)'));
     expect(result.current).toBe(true);
@@ -80,7 +81,7 @@ describe('useMediaQuery', () => {
         if (event === 'change') listeners.push(handler);
       }),
       removeEventListener: vi.fn(),
-    }));
+    }) as unknown as MediaQueryList);
 
     const { result } = renderHook(() => useMediaQuery('(min-width: 768px)'));
     expect(result.current).toBe(false);
@@ -105,7 +106,7 @@ describe('useMediaQuery', () => {
       media: '',
       addEventListener: addEventListenerSpy,
       removeEventListener: removeEventListenerSpy,
-    }));
+    }) as unknown as MediaQueryList);
 
     const { rerender } = renderHook(({ query }) => useMediaQuery(query), {
       initialProps: { query: '(min-width: 768px)' },
@@ -130,7 +131,7 @@ describe('useMediaQuery', () => {
       media: '(min-width: 768px)',
       addEventListener: vi.fn(),
       removeEventListener: removeEventListenerSpy,
-    });
+    } as unknown as MediaQueryList);
 
     const { unmount } = renderHook(() => useMediaQuery('(min-width: 768px)'));
 
@@ -148,7 +149,7 @@ describe('useMediaQuery', () => {
       media: '',
       addEventListener: vi.fn(),
       removeEventListener: removeEventListenerSpy,
-    });
+    } as unknown as MediaQueryList);
 
     const { rerender, unmount } = renderHook(({ query }) => useMediaQuery(query), {
       initialProps: { query: '(min-width: 768px)' },
@@ -180,7 +181,7 @@ describe('useMediaQuery', () => {
       media: '(min-width: 768px) and (max-width: 1024px)',
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    });
+    } as unknown as MediaQueryList);
 
     const { result } = renderHook(() =>
       useMediaQuery('(min-width: 768px) and (max-width: 1024px)')

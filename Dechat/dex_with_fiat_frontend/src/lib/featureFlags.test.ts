@@ -13,6 +13,7 @@ describe('FeatureFlags', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     
     const result = getFeatureFlag('nonExistentFlag' as ReturnType<typeof import('@/lib/featureFlags').FeatureFlagNameSchema.parse>);
+    const result = getFeatureFlag('nonExistentFlag');
     
     expect(result).toBe(false);
     expect(consoleSpy).toHaveBeenCalledWith(

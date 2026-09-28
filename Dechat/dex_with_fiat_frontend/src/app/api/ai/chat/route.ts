@@ -237,21 +237,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // 2. Check local FAQ knowledge base
-    const faqMatch = findFAQMatch(message);
-    if (faqMatch) {
-      const result: AIAnalysisResult = {
-        intent: faqMatch.intent,
-        confidence: 0.98,
-        extractedData: {},
-        requiredQuestions: [],
-        suggestedResponse: faqMatch.answer,
-      };
-      return NextResponse.json(result);
-    }
-
-    // 3. Deterministic parser
+    // 2. Deterministic parser (moved before FAQ so we can skip FAQ on transactions)
     const parserResult = parseMessage(message);
+    const isTransactional = !!(parserResult.amount || parserResult.fiatCurrency);
+
+    // 3. Check local FAQ knowledge base
+    if (!isTransactional) {
+      const faqMatch = findFAQMatch(message);
+      if (faqMatch) {
+        const result: AIAnalysisResult = {
+          intent: faqMatch.intent,
+          confidence: 0.98,
+          extractedData: {},
+          requiredQuestions: [],
+          suggestedResponse: faqMatch.answer,
+        };
+        return NextResponse.json(result);
+      }
+    }
 
     // 4. AI Analysis (server-side, key never leaves the server)
     const apiKey = env.GEMINI_API_KEY;

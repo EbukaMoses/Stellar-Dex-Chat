@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { AuditEntry } from '@/types';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useToast } from '@/hooks/useToast';
@@ -31,6 +31,7 @@ interface FilterState {
 }
 
 export default function AuditTable({}: AuditTableProps) {
+  const idPrefix = useId();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -425,10 +426,11 @@ export default function AuditTable({}: AuditTableProps) {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor={`${idPrefix}-action`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Action Type
             </label>
             <select
+              id={`${idPrefix}-action`}
               value={filters.actionType}
               onChange={(e) =>
                 handleFilterChange('actionType', e.target.value)
@@ -445,10 +447,11 @@ export default function AuditTable({}: AuditTableProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor={`${idPrefix}-status`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Status
             </label>
             <select
+              id={`${idPrefix}-status`}
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -461,10 +464,11 @@ export default function AuditTable({}: AuditTableProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor={`${idPrefix}-admin`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Admin Address
             </label>
             <input
+              id={`${idPrefix}-admin`}
               type="text"
               value={filters.adminAddress}
               onChange={(e) =>
@@ -476,10 +480,11 @@ export default function AuditTable({}: AuditTableProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor={`${idPrefix}-tx`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Transaction Hash
             </label>
             <input
+              id={`${idPrefix}-tx`}
               type="text"
               value={filters.txHash}
               onChange={(e) => handleFilterChange('txHash', e.target.value)}
@@ -489,10 +494,11 @@ export default function AuditTable({}: AuditTableProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Start Date
+            <label htmlFor={`${idPrefix}-start`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Start Date (from)
             </label>
             <input
+              id={`${idPrefix}-start`}
               type="date"
               value={filters.startDate}
               onChange={(e) =>
@@ -503,10 +509,11 @@ export default function AuditTable({}: AuditTableProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              End Date
+            <label htmlFor={`${idPrefix}-end`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              End Date (to)
             </label>
             <input
+              id={`${idPrefix}-end`}
               type="date"
               value={filters.endDate}
               onChange={(e) => handleFilterChange('endDate', e.target.value)}

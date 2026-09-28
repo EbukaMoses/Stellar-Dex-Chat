@@ -1,7 +1,7 @@
 /**
  * Admin Audit Log API Endpoint
  * Read-only endpoint for retrieving audit log entries with filtering
- * 
+ *
  * GET /api/admin-audit
  * Query Parameters:
  *   - actionType: Filter by action type (deposit|payout|reconciliation|user_update|settings_change)
@@ -12,11 +12,17 @@
  *   - endDate: Filter entries until this date (ISO string)
  *   - limit: Maximum number of entries to return (default: 100, max: 1000)
  *   - offset: Number of entries to skip for pagination (default: 0)
+ *   - sortKey: Field to sort by (timestamp|actionType|status|adminAddress)
+ *   - sortOrder: Sort order (asc|desc)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import AuditLogService from '@/lib/auditLog';
 import { AuditEntry, AuditLogFilter } from '@/types';
+
+const sortKeySchema = z.enum(['timestamp', 'actionType', 'status', 'adminAddress']);
+const sortOrderSchema = z.enum(['asc', 'desc']);
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,17 +83,62 @@ export async function GET(request: NextRequest) {
     const rawOffset = parseInt(searchParams.get('offset') || '0', 10);
     const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
 
+    // Sorting parameters
+    const rawSortKey = searchParams.get('sortKey');
+    const rawSortOrder = searchParams.get('sortOrder');
+
+    let sortKey: z.infer<typeof sortKeySchema> = 'timestamp';
+    let sortOrder: z.infer<typeof sortOrderSchema> = 'desc';
+
+    if (rawSortKey) {
+      const result = sortKeySchema.safeParse(rawSortKey);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: 'Invalid sortKey. Must be one of: timestamp, actionType, status, adminAddress' },
+          { status: 400 }
+        );
+      }
+      sortKey = result.data;
+    }
+
+    if (rawSortOrder) {
+      const result = sortOrderSchema.safeParse(rawSortOrder);
+      if (!result.success) {
+        return NextResponse.json(
+          { error: 'Invalid sortOrder. Must be asc or desc' },
+          { status: 400 }
+        );
+      }
+      sortOrder = result.data;
+    }
+
     // Retrieve filtered entries
     const allEntries = AuditLogService.getAuditEntries(filter);
 
-    // Apply pagination
-    const paginatedEntries = allEntries.slice(offset, offset + limit);
+    // Sort the full filtered set before pagination
+    allEntries.sort((a, b) => {
+      let comparison = 0;
 
-    // Sort by timestamp descending (most recent first)
-    paginatedEntries.sort(
-      (a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
+      switch (sortKey) {
+        case 'timestamp':
+          comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          break;
+        case 'actionType':
+          comparison = a.actionType.localeCompare(b.actionType);
+          break;
+        case 'status':
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case 'adminAddress':
+          comparison = a.adminAddress.localeCompare(b.adminAddress);
+          break;
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    // Apply pagination after sorting
+    const paginatedEntries = allEntries.slice(offset, offset + limit);
 
     return NextResponse.json(
       {
