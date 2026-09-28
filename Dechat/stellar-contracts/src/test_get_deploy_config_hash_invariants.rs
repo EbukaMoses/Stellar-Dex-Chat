@@ -16,9 +16,7 @@
 
 use crate::{Error, FiatBridge, FiatBridgeClient};
 use proptest::prelude::*;
-use soroban_sdk::{
-    testutils::Address as _, token, Address, Bytes, BytesN, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Bytes, BytesN, Env, Vec};
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -72,7 +70,10 @@ fn test_deploy_config_hash_none_before_init() {
 
     // Before init, the hash should be None
     let hash = client.get_deploy_config_hash();
-    assert!(hash.is_none(), "Deploy config hash should be None before init");
+    assert!(
+        hash.is_none(),
+        "Deploy config hash should be None before init"
+    );
 }
 
 #[test]
@@ -84,7 +85,10 @@ fn test_deploy_config_hash_some_after_init() {
 
     // After init, the hash should be Some
     let hash = client.get_deploy_config_hash();
-    assert!(hash.is_some(), "Deploy config hash should be Some after init");
+    assert!(
+        hash.is_some(),
+        "Deploy config hash should be Some after init"
+    );
 }
 
 #[test]

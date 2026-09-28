@@ -17,7 +17,15 @@ use soroban_sdk::{
     vec, Address, Bytes, Env,
 };
 
-fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenClient<'_>) {
+fn setup(
+    env: &Env,
+) -> (
+    Address,
+    FiatBridgeClient<'_>,
+    Address,
+    Address,
+    TokenClient<'_>,
+) {
     let contract_id = env.register(FiatBridge, ());
     let client = FiatBridgeClient::new(env, &contract_id);
 
@@ -29,7 +37,15 @@ fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenCl
     let token = TokenClient::new(env, &token_addr);
 
     let signers = vec![env, admin.clone()];
-    client.init(&admin, &token_addr, &10_000_000i128, &1i128, &signers, &1, &0);
+    client.init(
+        &admin,
+        &token_addr,
+        &10_000_000i128,
+        &1i128,
+        &signers,
+        &1,
+        &0,
+    );
 
     (contract_id, client, admin, token_addr, token)
 }
@@ -38,7 +54,11 @@ fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenCl
 /// top-level contract invocation, so a call that emits nothing leaves it
 /// empty regardless of what earlier calls emitted.
 fn event_count(env: &Env, contract_id: &Address) -> usize {
-    env.events().all().filter_by_contract(contract_id).events().len()
+    env.events()
+        .all()
+        .filter_by_contract(contract_id)
+        .events()
+        .len()
 }
 
 #[test]
@@ -88,7 +108,15 @@ fn get_receipt_by_index_emits_no_events() {
 
     let depositor = Address::generate(&env);
     StellarAssetClient::new(&env, &token_addr).mint(&depositor, &1_000_000i128);
-    client.deposit(&depositor, &1_000_000i128, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    client.deposit(
+        &depositor,
+        &1_000_000i128,
+        &token_addr,
+        &Bytes::new(&env),
+        &0,
+        &0,
+        &None,
+    );
 
     // In-bounds read.
     assert!(client.get_receipt_by_index(&0u64).is_some());

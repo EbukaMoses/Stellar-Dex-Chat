@@ -13,7 +13,15 @@ use soroban_sdk::{
     vec, Address, Bytes, Env,
 };
 
-fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenClient<'_>) {
+fn setup(
+    env: &Env,
+) -> (
+    Address,
+    FiatBridgeClient<'_>,
+    Address,
+    Address,
+    TokenClient<'_>,
+) {
     let contract_id = env.register(FiatBridge, ());
     let client = FiatBridgeClient::new(env, &contract_id);
 
@@ -25,7 +33,15 @@ fn setup(env: &Env) -> (Address, FiatBridgeClient<'_>, Address, Address, TokenCl
     let token = TokenClient::new(env, &token_addr);
 
     let signers = vec![env, admin.clone()];
-    client.init(&admin, &token_addr, &10_000_000i128, &1i128, &signers, &1, &0);
+    client.init(
+        &admin,
+        &token_addr,
+        &10_000_000i128,
+        &1i128,
+        &signers,
+        &1,
+        &0,
+    );
 
     (contract_id, client, admin, token_addr, token)
 }
@@ -92,7 +108,15 @@ fn withdraw_rejects_a_denied_recipient() {
 
     let (_contract_id, client, admin, token_addr, _token) = setup(&env);
     StellarAssetClient::new(&env, &token_addr).mint(&admin, &1_000_000i128);
-    client.deposit(&admin, &1_000_000i128, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    client.deposit(
+        &admin,
+        &1_000_000i128,
+        &token_addr,
+        &Bytes::new(&env),
+        &0,
+        &0,
+        &None,
+    );
 
     client.deny_address(&admin);
 
@@ -109,7 +133,15 @@ fn request_withdrawal_rejects_a_denied_recipient() {
 
     let (_contract_id, client, admin, token_addr, _token) = setup(&env);
     StellarAssetClient::new(&env, &token_addr).mint(&admin, &1_000_000i128);
-    client.deposit(&admin, &1_000_000i128, &token_addr, &Bytes::new(&env), &0, &0, &None);
+    client.deposit(
+        &admin,
+        &1_000_000i128,
+        &token_addr,
+        &Bytes::new(&env),
+        &0,
+        &0,
+        &None,
+    );
 
     client.deny_address(&admin);
 

@@ -40,10 +40,7 @@
 
 use crate::{Error, FiatBridge, FiatBridgeClient};
 use proptest::prelude::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Bytes, BytesN, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Bytes, BytesN, Env, Vec};
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -266,13 +263,9 @@ fn stored_request_reflects_its_inputs_faithfully() {
     let memo = BytesN::from_array(&env, &[7u8; 32]);
     let queued_at = env.ledger().sequence();
 
-    let id = fx.bridge.request_withdrawal(
-        &user,
-        &175,
-        &fx.token_addr,
-        &Some(memo.clone()),
-        &3,
-    );
+    let id = fx
+        .bridge
+        .request_withdrawal(&user, &175, &fx.token_addr, &Some(memo.clone()), &3);
 
     let stored = fx
         .bridge
