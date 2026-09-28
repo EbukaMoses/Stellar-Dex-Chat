@@ -19,6 +19,15 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure no npm or yarn lockfiles
+        run: |
+          found=$(find . -name "package-lock.json" -o -name "yarn.lock" | grep -v "node_modules/")
+          if [ -n "$found" ]; then
+            echo "❌ ERROR: Found npm/yarn lockfiles. Use pnpm only."
+            echo "$found"
+            exit 1
+          fi
+
       - name: Run actionlint
         uses: reviewdog/action-actionlint@ee28dc79d2c7e07b6a9c8abcf817194ab959c473 # v1.44.0
         with:

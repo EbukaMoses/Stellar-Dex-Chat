@@ -1,3 +1,8 @@
+# Root-level generated artifacts
+node_modules/
+/dex_with_fiat_frontend/.next/
+/dex_with_fiat_frontend/node_modules/
+/stellar-contracts/target/
 # Build output and dependencies
 **/node_modules/
 **/.next/
@@ -25,4 +30,8 @@ Thumbs.db
 
 # Scratch files
 issue.md
-pr.md
+pr.md/stellar-contracts/
+/dex_with_fiat_frontend/
+/Stellar-Dex-Chat
+package-lock.json
+yarn.lock

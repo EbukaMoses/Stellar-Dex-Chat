@@ -38,7 +38,7 @@ The FiatBridge contract deployment process includes:
 
 ## Local Deployment
 
-### Option 1: Bash Script
+### Bash Script
 
 ```bash
 # Set environment variables
@@ -47,17 +47,7 @@ export FUTURENET_RPC_URL="https://rpc-futurenet.stellar.org"
 export OUTPUT_FILE="./contract_id_futurenet.txt"
 
 # Run deployment script
-bash stellar-contracts/scripts/deploy_fiat_bridge_futurenet.sh
-```
-
-### Option 2: Rust Binary
-
-```bash
-# Set environment variables
-export FUTURENET_ADMIN_SECRET_KEY="your-secret-key"
-
-# Run the Rust deployment binary
-cargo run --release --bin deploy_fiat_bridge_futurenet
+bash scripts/deploy_fiat_bridge_futurenet.sh
 ```
 
 ### Environment Variables

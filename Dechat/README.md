@@ -124,7 +124,7 @@ The user sees a real-time transfer timeline in the chat interface and can downlo
 
 Before you begin, ensure you have the following installed:
 
-- **Node.js** (v18 or higher)
+- **Node.js** (v20)
 - **pnpm**
 - **Rust** & Cargo tooling + `wasm32-unknown-unknown` target
 - **Stellar CLI** (for interacting with Soroban)
@@ -214,8 +214,8 @@ This repository uses Husky and lint-staged to run quick quality checks before ea
 
 ```bash
 # from repository root
-npm install
-npm run prepare
+pnpm install
+pnpm run prepare
 
 # required once for Rust linting
 rustup component add clippy

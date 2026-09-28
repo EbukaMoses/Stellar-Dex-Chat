@@ -21,9 +21,8 @@ The application lives under `Dechat/`:
 - `Dechat/stellar-contracts` — Soroban smart contracts (Rust)
 - `Dechat/dex_with_fiat_frontend` — Next.js frontend
 
-CI workflow path filters point at these directories. The stray top-level
-`stellar-contracts/` and `dex_with_fiat_frontend/` directories are leftovers
-from the rebrand move and hold no source.
+CI workflow path filters point at these directories.
+
 
 ## Checks that must pass
 
