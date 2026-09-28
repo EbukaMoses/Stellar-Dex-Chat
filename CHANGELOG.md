@@ -427,6 +427,7 @@ Repo Avatar
 - **contract:** Harden emergency recovery administration
 - **contract:** Implement batch operations for heartbeat
 - **contract:** Add an explicit bounds check to set_limit
+- **contract:** Include caller and ledger in deposit, withdraw, set_limit, set_operator events
 
 ### Fixed
 
@@ -1191,6 +1192,10 @@ Repo Avatar
 - **repo:** Remove committed build output, logs and scratch files & fix the root .gitignore
 - Fix formatting with cargo fmt
 - **changelog:** Update changelog [skip ci]
+- **changelog:** Update changelog [skip ci]
+- **contract:** Add Soroban invariant tests for withdraw
+- **contract:** Add Soroban invariant tests for is_circuit_breaker_tripped
+- **contract:** Add Soroban invariant tests for withdraw_fees_batch
 
 ### Deprecated
 
