@@ -172,10 +172,10 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
             });
             fetchXlmBalance(addrResult.address)
               .then(setXlmBalance)
-              .catch(() => {});
+              .catch(() => { });
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isFreighterInstalled]);
 
@@ -232,7 +232,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       });
       fetchXlmBalance(addr)
         .then(setXlmBalance)
-        .catch(() => {});
+        .catch(() => { });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to connect Freighter',
@@ -283,7 +283,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()));
         fetchXlmBalance(selectedAccount.address)
           .then(setXlmBalance)
-          .catch(() => {});
+          .catch(() => { });
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to switch account',
@@ -352,6 +352,7 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       clearSessionExpired,
       ...(mockWalletEnabled ? { mockConnect } : {}),
       isNetworkMismatch,
+      refreshXlmBalance,
     }),
     [
       connection,
@@ -370,30 +371,12 @@ export function StellarWalletProvider({ children }: { children: ReactNode }) {
       mockConnect,
       mockWalletEnabled,
       isNetworkMismatch,
+      refreshXlmBalance,
     ],
   );
 
   return (
-    <StellarWalletContext.Provider
-      value={{
-        connection,
-        accounts,
-        selectedAccountIndex,
-        xlmBalance,
-        selectAccount,
-        connect,
-        disconnect,
-        signTx,
-        isFreighterInstalled,
-        isLoading,
-        error,
-        sessionExpired,
-        clearSessionExpired,
-        mockConnect,
-        isNetworkMismatch,
-        refreshXlmBalance,
-      }}
-    >
+    <StellarWalletContext.Provider value={contextValue}>
       {children}
     </StellarWalletContext.Provider>
   );
