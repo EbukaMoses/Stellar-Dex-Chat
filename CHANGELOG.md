@@ -893,6 +893,8 @@ Repo Avatar
 - **contract:** Stop token allowlist indexes from accumulating duplicates
 - **frontend:** StellarChatInterface reads navigator.onLine during render and duplicates the useOnlineStatus/useMediaQuery hooks
 - **frontend:** FAQ substring matching intercepts transactional messages before the parser and AI run
+- **frontend:** Confirm bank transfer success via real status, not a timer
+- **frontend:** Url-encode Paystack account-resolve params and tighten payout schemas
 
 ### Changed
 
@@ -1198,6 +1200,9 @@ Repo Avatar
 - **contract:** Add Soroban invariant tests for is_circuit_breaker_tripped
 - **contract:** Add Soroban invariant tests for withdraw_fees_batch
 - **changelog:** Update changelog [skip ci]
+- **changelog:** Update changelog [skip ci]
+- **repo:** Add CODEOWNERS and document required branch protection
+- Run cargo-deny and pnpm audit on a weekly schedule
 
 ### Deprecated
 
@@ -1756,3 +1761,6 @@ Issue 1-4: Smart contract security and invariant test fixes
 - Merge pull request #1541 from xeladev4/fix/webhook-security-minimal
 
 fix(frontend): add minimal security hardening for webhook and transfe…
+- Merge pull request #1563 from Mrwicks00/fix/1455-1458-1478-1479-ci-security-hardening
+
+Fix/1455 1458 1478 1479 ci security hardening
