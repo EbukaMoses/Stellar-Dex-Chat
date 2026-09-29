@@ -3,6 +3,8 @@
 import SkeletonChat from '@/components/ui/skeleton/SkeletonChat';
 import SkeletonSidebar from '@/components/ui/skeleton/SkeletonSidebar';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   Wallet,
   LogOut,
@@ -31,22 +33,13 @@ import useBridgeStats from '@/hooks/useBridgeStats';
 import useChat from '@/hooks/useChat';
 import { useDeepLink } from '@/hooks/useDeepLink';
 import { getQueuedReadRequestsCount } from '@/lib/networkQueue';
-import {
-  getAdmin,
-  getWithdrawalQueueDepth,
-  stroopsToDisplay,
-} from '@/lib/stellarContract';
+import { stroopsToDisplay } from '@/lib/stellarContract';
 import { usePaystackWebhookStatus } from '@/hooks/usePaystackWebhookStatus';
 import { TransactionData } from '@/types';
-import BankDetailsModal from './BankDetailsModal';
 import ChatHistorySidebar from './ChatHistorySidebar';
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
 import ErrorBoundary from './ErrorBoundary';
-import NetworkStatusModal from './NetworkStatusModal';
-import NotificationsCenter from './NotificationsCenter';
-import StellarFiatModal from './StellarFiatModal';
-import UserSettings from './UserSettings';
 import WalletConnectionTimeline from './WalletConnectionTimeline';
 import { useTranslation } from '@/contexts/TranslationContext';
 import ReceiptDrawer from './ReceiptDrawerWrapper';
@@ -57,8 +50,13 @@ import { useWatchlist } from '@/hooks/useWatchlist';
 import { useWatchedWalletNotifications } from '@/hooks/useWatchedWalletNotifications';
 import { subscribeToQueue, processQueue } from '@/lib/networkQueue';
 import CopyButton from '@/components/ui/CopyButton';
-import SplitViewComparison from './SplitViewComparison';
-import ChatSearchPanel from './ChatSearchPanel';
+import SplitViewComparisonWrapper from './SplitViewComparisonWrapper';
+import ChatSearchPanelWrapper from './ChatSearchPanelWrapper';
+import BankDetailsModalWrapper from './BankDetailsModalWrapper';
+import StellarFiatModalWrapper from './StellarFiatModalWrapper';
+import UserSettingsWrapper from './UserSettingsWrapper';
+import NetworkStatusModalWrapper from './NetworkStatusModalWrapper';
+import NotificationsCenterWrapper from './NotificationsCenterWrapper';
 
 /** Possible states for the API health badge */
 type HealthStatus = 'checking' | 'ok' | 'degraded';
@@ -89,14 +87,12 @@ function StellarChatInterfaceContent() {
   const [defaultAmount, setDefaultAmount] = useState('');
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [bankDetailsXlmAmount, setBankDetailsXlmAmount] = useState(0);
-  const [isMobile, setIsMobile] = useState(false);
   const [isSheetMounted, setIsSheetMounted] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
-  const [isOnline, setIsOnline] = useState(
-    typeof window !== 'undefined' ? window.navigator.onLine : true,
-  );
+  const { isOnline, wasOffline, resetWasOffline } = useOnlineStatus();
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
   // ── Health badge state ──────────────────────────────────────────────────────
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('checking');
@@ -163,23 +159,14 @@ function StellarChatInterfaceContent() {
     error: statsError,
   } = useBridgeStats();
 
-  // Track viewport width to switch between sidebar and drawer
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 640);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   useEffect(() => {
     setIsHydrated(true);
   }, []);
 
+  // Handle reconnection notice and queue processing when coming back online
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleOnline = () => {
-      setIsOnline(true);
+    if (wasOffline && isOnline) {
       setShowReconnectedNotice(true);
       if (reconnectNoticeTimerRef.current) {
         clearTimeout(reconnectNoticeTimerRef.current);
@@ -188,31 +175,16 @@ function StellarChatInterfaceContent() {
         setShowReconnectedNotice(false);
       }, 3000);
       void processQueue();
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setShowReconnectedNotice(false);
-      if (reconnectNoticeTimerRef.current) {
-        clearTimeout(reconnectNoticeTimerRef.current);
-        reconnectNoticeTimerRef.current = null;
-      }
-    };
+      resetWasOffline();
+    }
+  }, [wasOffline, isOnline, resetWasOffline]);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
+  // Subscribe to queue updates
+  useEffect(() => {
     const unsubscribe = subscribeToQueue((count) => {
       setQueuedReadables(count);
     });
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      if (reconnectNoticeTimerRef.current) {
-        clearTimeout(reconnectNoticeTimerRef.current);
-      }
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   // Global shortcut: Cmd/Ctrl+K toggles ChatSearchPanel from anywhere
@@ -257,6 +229,7 @@ function StellarChatInterfaceContent() {
       if (connection.isConnected && connection.address) {
         try {
           // Fetch truth directly from the blockchain
+          const { getAdmin } = await import('@/lib/stellarContract');
           const adminAddr = await getAdmin();
           setIsAdmin(adminAddr === connection.address);
         } catch (err: unknown) {
@@ -283,6 +256,7 @@ function StellarChatInterfaceContent() {
 
     const pollQueueDepth = async () => {
       try {
+        const { getWithdrawalQueueDepth } = await import('@/lib/stellarContract');
         const depth = await getWithdrawalQueueDepth();
         if (!cancelled) {
           setWithdrawalQueueDepth(depth);
@@ -613,7 +587,7 @@ function StellarChatInterfaceContent() {
                 <Plus className="w-5 h-5" />
               </button>
 
-              <NotificationsCenter />
+              <NotificationsCenterWrapper />
 
               {/* Search history */}
               <button
@@ -719,8 +693,8 @@ function StellarChatInterfaceContent() {
                             className={`flex items-center gap-1 px-1.5 py-1 ${idx === selectedAccountIndex ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-50 text-blue-600') : ''}`}
                           >
                             <button
-                              onClick={() => {
-                                selectAccount(idx);
+                              onClick={async () => {
+                                await selectAccount(idx);
                                 setShowAccountDropdown(false);
                               }}
                               className={`flex-1 flex items-center gap-2 px-1.5 py-1 text-xs rounded transition-colors ${idx === selectedAccountIndex ? '' : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
@@ -1038,12 +1012,12 @@ function StellarChatInterfaceContent() {
         )}
 
         {/* Split-view comparison overlay */}
-        <SplitViewComparison splitView={splitView} sessions={sessions} />
+        <SplitViewComparisonWrapper splitView={splitView} sessions={sessions} />
 
         {/* Search panel — slide-over on the right */}
         {showSearch && (
           <div className="fixed inset-y-0 right-0 z-40 w-80 shadow-2xl flex flex-col">
-            <ChatSearchPanel
+            <ChatSearchPanelWrapper
               sessions={sessions}
               onSelectResult={(sessionId: string) => {
                 loadChatSession(sessionId);
@@ -1055,7 +1029,7 @@ function StellarChatInterfaceContent() {
         )}
 
         {/* Deposit / Withdraw Modal */}
-        <StellarFiatModal
+        <StellarFiatModalWrapper
           isOpen={showModal}
           onClose={() => {
             setShowModal(false);
@@ -1070,20 +1044,20 @@ function StellarChatInterfaceContent() {
         />
 
         {/* Bank details & fiat payout modal */}
-        <BankDetailsModal
+        <BankDetailsModalWrapper
           isOpen={showBankDetails}
           onClose={() => setShowBankDetails(false)}
           xlmAmount={bankDetailsXlmAmount}
         />
 
         {/* Settings panel */}
-        <UserSettings
+        <UserSettingsWrapper
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
         />
 
         {/* Network status modal (issue #1030) */}
-        <NetworkStatusModal
+        <NetworkStatusModalWrapper
           isOpen={showNetworkStatusModal}
           onClose={() => setShowNetworkStatusModal(false)}
         />

@@ -11,6 +11,9 @@ export const useChatHistory = () => {
     currentSessionId: null,
     sessions: [],
   });
+  // False until the stored history has been read, so the initial empty state
+  // is never written back over what is in localStorage.
+  const [isLoaded, setIsLoaded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ChatSession[]>([]);
@@ -26,18 +29,20 @@ export const useChatHistory = () => {
   useEffect(() => {
     const loaded = ChatHistoryManager.loadFromLocalStorage();
     setHistoryState(loaded);
+    setIsLoaded(true);
   }, []);
 
   // Debounced save to localStorage
+  // Persists an empty list too: skipping it left the last deleted session in
+  // localStorage, so it came back after a reload (#1506).
   useEffect(() => {
-    if (historyState.sessions.length > 0) {
-      const timeoutId = setTimeout(() => {
-        ChatHistoryManager.saveToLocalStorage(historyState);
-      }, 500); // Debounce by 500ms
+    if (!isLoaded) return;
+    const timeoutId = setTimeout(() => {
+      ChatHistoryManager.saveToLocalStorage(historyState);
+    }, 500); // Debounce by 500ms
 
-      return () => clearTimeout(timeoutId);
-    }
-  }, [historyState]);
+    return () => clearTimeout(timeoutId);
+  }, [historyState, isLoaded]);
 
   // Debounced search - avoids triggering a lookup on every keystroke
   useEffect(() => {

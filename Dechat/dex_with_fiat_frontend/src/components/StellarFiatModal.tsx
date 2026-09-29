@@ -77,7 +77,7 @@ export default function StellarFiatModal({
   // so the submit button stays enabled across same-tick clicks. A ref closes
   // that window before React re-renders.
   const lastSubmitAtRef = useRef(0);
-  const { connection, signTx } = useStellarWallet();
+  const { connection, signTx, xlmBalance, refreshXlmBalance } = useStellarWallet();
   const { addNotification } = useNotifications();
   const { addEntry } = useTxHistory();
   const { highValueThreshold, twoFactorEnabled } = useUserPreferences();
@@ -99,13 +99,12 @@ export default function StellarFiatModal({
   const [requiresPreSignConfirmation, setRequiresPreSignConfirmation] =
     useState(false);
   const [isLoadingFee, setIsLoadingFee] = useState(false);
+  const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
   const [status, setStatus] = useState<TxStatus>('idle');
   const [txHash, setTxHash] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoadingUI, setIsLoadingUI] = useState(true);
   const [lastActionTimestamp, setLastActionTimestamp] = useState(0);
-  const [walletBalance, setWalletBalance] = useState<string | null>(null);
-  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
   const [twoFactorConfirmation, setTwoFactorConfirmation] = useState('');
 
@@ -113,54 +112,6 @@ export default function StellarFiatModal({
   const isStatusPending = (status as TxStatus) === 'pending';
   const isStatusLoading = (status as TxStatus) === 'loading';
   const isTransactionBusy = isStatusPending || isStatusLoading;
-
-  useEffect(() => {
-    if (!isOpen || !connection.isConnected || !connection.publicKey) {
-      setWalletBalance(null);
-      return;
-    }
-
-    let cancelled = false;
-    setIsLoadingBalance(true);
-
-    const fetchBalance = async () => {
-      try {
-        const horizonUrl =
-          connection.network?.toUpperCase() === 'PUBLIC'
-            ? 'https://horizon.stellar.org'
-            : 'https://horizon-testnet.stellar.org';
-        const res = await fetch(
-          `${horizonUrl}/accounts/${connection.publicKey}`,
-        );
-        if (!res.ok) throw new Error('Failed to fetch account');
-        const data = await res.json();
-        const native = (
-          data.balances as Array<{ asset_type: string; balance: string }>
-        ).find((b) => b.asset_type === 'native');
-        if (!cancelled && native) {
-          setWalletBalance(native.balance);
-        }
-      } catch {
-        if (!cancelled) {
-          setWalletBalance(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingBalance(false);
-        }
-      }
-    };
-
-    void fetchBalance();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isOpen,
-    connection.isConnected,
-    connection.publicKey,
-    connection.network,
-  ]);
 
   const {
     limit: bridgeLimit,
@@ -260,13 +211,15 @@ export default function StellarFiatModal({
 
     let cancelled = false;
     pollTransaction(pending.hash)
-      .then((hash) => {
+      .then(async (hash) => {
         if (cancelled) {
           return;
         }
         setTxHash(hash);
         setStatus('success');
         localStorage.removeItem(PENDING_TX_KEY);
+        // Refresh wallet balance after successful transaction
+        await refreshXlmBalance();
       })
       .catch(() => {
         if (cancelled) {
@@ -280,7 +233,7 @@ export default function StellarFiatModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, refreshXlmBalance]);
 
   useEffect(() => {
     if (!isOpen || !connection.isConnected) {
@@ -295,9 +248,10 @@ export default function StellarFiatModal({
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     setIsLoadingFee(true);
 
-    const simulate = async () => {
+    const timer = setTimeout(async () => {
       try {
         let estimate: FeeEstimate | null = null;
         if (isAdminMode) {
@@ -327,11 +281,11 @@ export default function StellarFiatModal({
           setIsLoadingFee(false);
         }
       }
-    };
+    }, 300);
 
-    const timer = setTimeout(simulate, 500);
     return () => {
       cancelled = true;
+      abortController.abort();
       clearTimeout(timer);
     };
   }, [
@@ -584,6 +538,8 @@ export default function StellarFiatModal({
           setStatus('success');
           clearCache();
           localStorage.removeItem(PENDING_TX_KEY);
+          // Refresh wallet balance after successful transaction
+          await refreshXlmBalance();
           addNotification(
             'tx_confirm',
             `Transaction confirmed successfully! (${hash.slice(0, 8)}...)`,
@@ -687,22 +643,28 @@ export default function StellarFiatModal({
             <button
               type="button"
               data-testid="download-receipt-button"
-              onClick={() =>
-                downloadReceipt({
-                  txHash,
-                  amount: stroopsToDisplay(stroopsAmount ?? BigInt(0)),
-                  wallet: connection.publicKey,
-                  network: connection.network || 'TESTNET',
-                  timestamp: new Date().toLocaleString(),
-                  type: isAdminMode ? 'Withdrawal' : 'Deposit',
-                  note: note.trim() || undefined,
-                  messages,
-                })
-              }
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors text-sm font-medium"
+              onClick={async () => {
+                setIsDownloadingReceipt(true);
+                try {
+                  await downloadReceipt({
+                    txHash,
+                    amount: stroopsToDisplay(stroopsAmount ?? BigInt(0)),
+                    wallet: connection.publicKey,
+                    network: connection.network || 'TESTNET',
+                    timestamp: new Date().toLocaleString(),
+                    type: isAdminMode ? 'Withdrawal' : 'Deposit',
+                    note: note.trim() || undefined,
+                    messages,
+                  });
+                } finally {
+                  setIsDownloadingReceipt(false);
+                }
+              }}
+              disabled={isDownloadingReceipt}
+              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-4 h-4" />
-              Download Receipt
+              {isDownloadingReceipt ? 'Generating...' : 'Download Receipt'}
             </button>
 
             {!isAdminMode && onDepositSuccess ? (
@@ -792,11 +754,7 @@ export default function StellarFiatModal({
                 <p className="theme-text-secondary text-xs mt-2">
                   Available:{' '}
                   <span className="theme-text-primary font-medium">
-                    {isLoadingBalance
-                      ? 'Loading...'
-                      : walletBalance !== null
-                        ? `${walletBalance} XLM`
-                        : 'Unable to fetch balance'}
+                    {xlmBalance ? `${xlmBalance} XLM` : 'Loading...'}
                   </span>
                 </p>
               )}

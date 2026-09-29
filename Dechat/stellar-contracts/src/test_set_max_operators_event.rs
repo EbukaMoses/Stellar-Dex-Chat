@@ -38,7 +38,7 @@ fn setup_bridge<'a>(env: &Env) -> (Address, FiatBridgeClient<'a>, Address) {
     let mut signers = Vec::new(env);
     signers.push_back(admin.clone());
 
-    client.init(&admin, &token_address, &1_000_000, &100, &signers, &1);
+    client.init(&admin, &token_address, &1_000_000, &100, &signers, &1, &0);
 
     (contract_id, client, admin)
 }
@@ -157,8 +157,8 @@ fn event_reports_active_operator_count() {
         Some(0)
     );
 
-    bridge.set_operator(&Address::generate(&env), &true);
-    bridge.set_operator(&Address::generate(&env), &true);
+    bridge.set_operator(&Address::generate(&env), &true, &0);
+    bridge.set_operator(&Address::generate(&env), &true, &0);
 
     bridge.set_max_operators(&6);
     assert_eq!(
@@ -217,9 +217,9 @@ fn rejected_call_emits_nothing_and_leaves_cap_unchanged() {
 
     let (contract_id, bridge, _admin) = setup_bridge(&env);
 
-    bridge.set_operator(&Address::generate(&env), &true);
-    bridge.set_operator(&Address::generate(&env), &true);
-    bridge.set_operator(&Address::generate(&env), &true);
+    bridge.set_operator(&Address::generate(&env), &true, &0);
+    bridge.set_operator(&Address::generate(&env), &true, &0);
+    bridge.set_operator(&Address::generate(&env), &true, &0);
 
     bridge.set_max_operators(&5);
 

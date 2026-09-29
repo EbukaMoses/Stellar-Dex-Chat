@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import SplitViewComparison from '../SplitViewComparison';
 import { ChatSession } from '@/types';
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -51,7 +51,7 @@ describe('SplitViewComparison - Clipboard Copy', () => {
         },
       ],
       createdAt: new Date('2024-01-01'),
-      updatedAt: new Date('2024-01-01'),
+      lastUpdated: new Date('2024-01-01'),
     },
   ];
 
@@ -74,6 +74,10 @@ describe('SplitViewComparison - Clipboard Copy', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders copy button on message hover', () => {
@@ -116,6 +120,27 @@ describe('SplitViewComparison - Clipboard Copy', () => {
       const checkIcon = firstCopyButton.querySelector('svg');
       expect(checkIcon).toBeInTheDocument();
     });
+  });
+
+  it('keeps feedback on the most recently copied message until its own timeout', async () => {
+    vi.useFakeTimers();
+    renderWithTheme(
+      <SplitViewComparison splitView={mockSplitView} sessions={mockSessions} />,
+    );
+
+    const [firstCopyButton, secondCopyButton] = screen.getAllByTestId('copy-message-btn');
+    await act(async () => {
+      fireEvent.click(firstCopyButton);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      fireEvent.click(secondCopyButton);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(secondCopyButton.querySelector('[data-lucide="check"]')).toBeInTheDocument();
   });
 
   it('does not trigger message selection when copy button is clicked', async () => {

@@ -19,13 +19,13 @@
 //! Registered from `lib.rs` behind `#[cfg(test)]`; this file deliberately
 //! carries no inner `#![cfg(test)]` so clippy's `duplicated_attributes` lint
 //! stays quiet.
+//!
+//! See [`docs/INVARIANT_TESTING.md`](docs/INVARIANT_TESTING.md) for the
+//! invariant-testing strategy and contributor checklist.
 
 use crate::{Error, FiatBridge, FiatBridgeClient};
 use proptest::prelude::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, BytesN, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env, Vec};
 
 /// Mirrors the contract-private `MIN_UPGRADE_DELAY`.
 const MIN_UPGRADE_DELAY: u32 = 1_000;
@@ -53,7 +53,7 @@ fn setup_bridge(env: &Env) -> (FiatBridgeClient<'_>, Address) {
     let mut signers = Vec::new(env);
     signers.push_back(admin.clone());
 
-    client.init(&admin, &token_address, &1_000_000, &100, &signers, &1);
+    client.init(&admin, &token_address, &1_000_000, &100, &signers, &1, &0);
 
     (client, admin)
 }
@@ -94,6 +94,9 @@ fn proposal_records_hash_verbatim_and_default_delay() {
     let p = bridge
         .get_upgrade_proposal()
         .expect("a proposal must be stored");
+    let timing = bridge
+        .get_upgrade_proposal_timing()
+        .expect("timing metadata must be stored");
 
     assert_eq!(p.wasm_hash, hash, "the WASM hash must round-trip verbatim");
     assert_eq!(
@@ -106,6 +109,10 @@ fn proposal_records_hash_verbatim_and_default_delay() {
         MIN_UPGRADE_DELAY,
         "proposing must not alter the configured delay"
     );
+    assert_eq!(timing.wasm_hash, hash);
+    assert_eq!(timing.proposed_at, seq_before);
+    assert_eq!(timing.delay, MIN_UPGRADE_DELAY);
+    assert_eq!(timing.executable_after, p.executable_after);
 }
 
 #[test]
@@ -259,6 +266,7 @@ fn non_admin_is_rejected_and_leaves_existing_proposal_untouched() {
         &100,
         &signers,
         &1,
+        &0,
     );
 
     let legitimate = hash_of(&env, 0x66);

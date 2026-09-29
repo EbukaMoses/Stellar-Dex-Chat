@@ -18,7 +18,7 @@ fn env_with_sequence(seq: u32) -> Env {
 fn init_client(env: &Env, client: &FiatBridgeClient, admin: &Address, token: &Address) {
     let mut signers = Vec::new(env);
     signers.push_back(admin.clone());
-    client.init(admin, token, &1_000_000, &100, &signers, &1);
+    client.init(admin, token, &1_000_000, &100, &signers, &1, &0);
 }
 
 /// `accept_admin` must fail with AdminTransferTooEarly if called before the delay.
