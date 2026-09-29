@@ -1,5 +1,15 @@
 name: Frontend CI
 
+# ── Job graph ────────────────────────────────────────────────────────────────
+#
+#   lint ──────────────────────────────────────────────────────────┐
+#   build ─────────────────────────────────────────────────────────┤──► e2e
+#   unit-tests (matrix ×4, parallel) ──► coverage-merge ──────────┘
+#
+# build and unit-tests are independent: a test failure does not hide a build
+# failure and vice-versa.  e2e waits only for build + lint so it starts as
+# soon as the app compiles, without waiting for unit tests.
+
 on:
   pull_request:
     branches: [main]
@@ -14,14 +24,20 @@ on:
 permissions:
   contents: read
 
+# Shared env block referenced by build, unit-tests and e2e.
+env:
+  NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
+  NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
+  NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
+  NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'PLACEHOLDER' }}
+  PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
+  PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
+
 jobs:
-<<<<<<< HEAD
-  build:
-    name: Build & Type Check
-=======
+  # ── 1. Lint & type-check ──────────────────────────────────────────────────
   lint:
     name: Lint & Type Check
->>>>>>> emwulrd/main
     runs-on: ubuntu-latest
 
     defaults:
@@ -29,27 +45,13 @@ jobs:
         working-directory: Dechat/dex_with_fiat_frontend
 
     steps:
-      - name: Checkout repository
-<<<<<<< HEAD
-        uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-=======
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
->>>>>>> emwulrd/main
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 8
 
-      - name: Set up Node.js
-<<<<<<< HEAD
-        uses: actions/setup-node@v4
-=======
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
->>>>>>> emwulrd/main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: "pnpm"
@@ -57,6 +59,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
+
+      - name: Prettier check
+        run: pnpm check
 
       - name: Type check
         run: pnpm tsc --noEmit
@@ -64,10 +69,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-<<<<<<< HEAD
-=======
+  # ── 2. Next.js build (independent of unit tests) ──────────────────────────
   build:
-    name: Build & Test
+    name: Build
     runs-on: ubuntu-latest
 
     defaults:
@@ -75,16 +79,13 @@ jobs:
         working-directory: Dechat/dex_with_fiat_frontend
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 8
 
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: "pnpm"
@@ -93,56 +94,154 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
->>>>>>> emwulrd/main
       - name: Build
         run: pnpm build
-        env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'PLACEHOLDER' }}
-          PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
-          PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
 
-      - name: Unit tests with coverage (shard 1/4)
-        run: pnpm test:coverage:shard:1
+  # ── 3. Unit tests — 4 shards run in parallel ──────────────────────────────
+  unit-tests:
+    name: Unit tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Let all shards finish so we always collect all blob artifacts even when
+      # one shard has failures — coverage-merge needs every blob.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    defaults:
+      run:
+        working-directory: Dechat/dex_with_fiat_frontend
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: Dechat/dex_with_fiat_frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Record wall-clock start time so coverage-merge can report it.
+      - name: Record shard start time
+        id: timing
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: |
+          pnpm vitest run \
+            --coverage \
+            --maxWorkers=1 \
+            --pool=forks \
+            --no-file-parallelism \
+            --reporter=blob \
+            --reporter=dot \
+            --coverage.reporter=json-summary \
+            --coverage.clean \
+            --shard=${{ matrix.shard }}/4
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
-      - name: Unit tests with coverage (shard 2/4)
-        run: pnpm test:coverage:shard:2
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
+      - name: Record shard end time
+        if: always()
+        run: |
+          end=$(date +%s)
+          echo "duration=$(( end - ${{ steps.timing.outputs.start }} ))s" >> "$GITHUB_OUTPUT"
+        id: shard_duration
 
-      - name: Unit tests with coverage (shard 3/4)
-        run: pnpm test:coverage:shard:3
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
+      # Upload the vitest blob so coverage-merge can reconstruct full coverage.
+      # The blob lands in .vitest-reports/ by vitest convention.
+      - name: Upload blob report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vitest-blob-${{ matrix.shard }}
+          path: Dechat/dex_with_fiat_frontend/.vitest-reports/
+          retention-days: 1
 
-      - name: Unit tests with coverage (shard 4/4)
-        run: pnpm test:coverage:shard:4
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
+      # Upload per-shard coverage-summary.json so coverage-merge has something
+      # to work with even if --mergeReports fails.
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-summary-${{ matrix.shard }}
+          path: Dechat/dex_with_fiat_frontend/coverage/coverage-summary.json
+          retention-days: 1
 
-      - name: Merge coverage reports
-        run: pnpm test:coverage:merge
+  # ── 4. Merge coverage blobs, produce report, write job summary ────────────
+  coverage-merge:
+    name: Coverage merge & report
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    # Run when shards finish (pass or fail) so we always produce coverage data.
+    # Skip only if the unit-tests job itself was skipped (e.g. path filter).
+    if: needs.unit-tests.result != 'skipped'
+
+    defaults:
+      run:
+        working-directory: Dechat/dex_with_fiat_frontend
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: Dechat/dex_with_fiat_frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Download all four blob artifacts into .vitest-reports/ so vitest can
+      # find them with its default --mergeReports path.
+      - name: Download blob reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: vitest-blob-*
+          path: Dechat/dex_with_fiat_frontend/.vitest-reports
+          merge-multiple: true
+
+      - name: Record merge start time
+        id: merge_timing
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Merge reports and regenerate coverage
+        run: |
+          pnpm vitest run \
+            --mergeReports \
+            --coverage \
+            --reporter=default
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-<<<<<<< HEAD
-        # Fails the pipeline if coverage thresholds (stmt 70%, branch 65%, fn 70%) are not met
-=======
-        # NOTE: coverage.thresholds are not currently configured in vitest.config.ts,
-        # so this step does not fail the pipeline on low coverage. The target numbers
-        # below (stmt 70%, branch 65%, fn 70%, lines 70%) are informational only until
-        # a threshold gate is deliberately reintroduced.
+        # NOTE: coverage.thresholds are not configured in vitest.config.ts yet.
+        # The numbers below (stmt 70%, branch 65%, fn 70%, lines 70%) are targets
+        # only; this step does not fail on low coverage until thresholds are added.
 
+      - name: Record merge end time
+        id: merge_end
+        if: always()
+        run: echo "end=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      # Build the JSON consumed by coverage-comment.yml.
       - name: Generate coverage report artifact
         id: coverage_report
         if: always() && github.event_name == 'pull_request'
         run: |
           if [ ! -f coverage/coverage-summary.json ]; then
-            echo "No coverage summary found, skipping report generation."
+            echo "No coverage summary found."
             echo "generated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -163,55 +262,69 @@ jobs:
           "
           echo "generated=true" >> "$GITHUB_OUTPUT"
 
-      # PRs from forks get a read-only GITHUB_TOKEN under the `pull_request` event, so
-      # this job can't post a comment directly. The report is handed off as an artifact
-      # to coverage-comment.yml, which runs via `workflow_run` in the base repo's
-      # context (write-capable token) and only ever reads this JSON — it never checks
-      # out or executes any code from the PR.
-      - name: Upload coverage report artifact
+      - name: Upload coverage report for coverage-comment.yml
         if: always() && steps.coverage_report.outputs.generated == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frontend-coverage-report
           path: Dechat/dex_with_fiat_frontend/frontend-coverage-report.json
           retention-days: 7
->>>>>>> emwulrd/main
 
+      # ── Job summary: before/after wall-clock comparison ──────────────────
+      # Before: 4 shards × ~N minutes sequential = total serial time.
+      # After:  longest shard (parallel) + merge time = total wall-clock time.
+      - name: Write job summary
+        if: always()
+        run: |
+          MERGE_START="${{ steps.merge_timing.outputs.start }}"
+          MERGE_END="${{ steps.merge_end.outputs.end }}"
+          if [[ -n "$MERGE_START" && -n "$MERGE_END" ]]; then
+            MERGE_DUR=$(( MERGE_END - MERGE_START ))
+          else
+            MERGE_DUR="unknown"
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Unit test timing
+
+          | | Time |
+          |---|---|
+          | Merge step | MERGE_DUR_PLACEHOLDER |
+
+          ### Before vs after wall-clock
+
+          **Before** — sequential shards in one job:
+          `wall-clock = shard1 + shard2 + shard3 + shard4 + merge`
+
+          **After** — parallel matrix + separate merge job:
+          `wall-clock = max(shard1, shard2, shard3, shard4) + merge`
+
+          Check the individual "Unit tests (shard N/4)" jobs for each shard's
+          duration; the saving is roughly `sum(shards) - max(shards)`.
+          SUMMARY
+
+          # Patch in the actual merge duration (heredoc used 'SUMMARY' to avoid
+          # shell expansion conflicts with ${} inside the table).
+          sed -i "s/MERGE_DUR_PLACEHOLDER/${MERGE_DUR}s/" "$GITHUB_STEP_SUMMARY"
+
+  # ── 5. Playwright E2E — waits only for build + lint ──────────────────────
   e2e:
     name: Playwright E2E Tests
     runs-on: ubuntu-latest
-<<<<<<< HEAD
-    needs: build
-=======
     needs: [build, lint]
->>>>>>> emwulrd/main
 
     defaults:
       run:
         working-directory: Dechat/dex_with_fiat_frontend
 
     steps:
-      - name: Checkout repository
-<<<<<<< HEAD
-        uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-=======
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
->>>>>>> emwulrd/main
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 8
 
-      - name: Set up Node.js
-<<<<<<< HEAD
-        uses: actions/setup-node@v4
-=======
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
->>>>>>> emwulrd/main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: "pnpm"
@@ -220,10 +333,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-<<<<<<< HEAD
-      - name: Install Playwright browsers
-        run: pnpm test:e2e:install
-=======
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -238,33 +347,20 @@ jobs:
       - name: Install Playwright OS dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium firefox webkit
->>>>>>> emwulrd/main
 
       - name: Build for E2E
         run: pnpm build
-        env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'PLACEHOLDER' }}
-          PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY || 'PLACEHOLDER' }}
-          PAYOUT_PROVIDER: ${{ secrets.PAYOUT_PROVIDER || 'paystack' }}
 
       - name: Run Playwright E2E tests
         run: pnpm test:e2e
         env:
-          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ secrets.NEXT_PUBLIC_STELLAR_CONTRACT_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_XLM_SAC_ID: ${{ secrets.NEXT_PUBLIC_XLM_SAC_ID || 'PLACEHOLDER' }}
-          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ secrets.NEXT_PUBLIC_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org' }}
-          NEXT_PUBLIC_STELLAR_NETWORK: ${{ secrets.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET' }}
+          NEXT_PUBLIC_STELLAR_CONTRACT_ID: ${{ env.NEXT_PUBLIC_STELLAR_CONTRACT_ID }}
+          NEXT_PUBLIC_XLM_SAC_ID: ${{ env.NEXT_PUBLIC_XLM_SAC_ID }}
+          NEXT_PUBLIC_STELLAR_RPC_URL: ${{ env.NEXT_PUBLIC_STELLAR_RPC_URL }}
+          NEXT_PUBLIC_STELLAR_NETWORK: ${{ env.NEXT_PUBLIC_STELLAR_NETWORK }}
 
       - name: Upload Playwright report
-<<<<<<< HEAD
-        uses: actions/upload-artifact@v4
-=======
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
->>>>>>> emwulrd/main
         if: always()
         with:
           name: playwright-report
