@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { env } from '@/lib/env';
+import { serverEnv as env } from '@/lib/serverEnv';
 
 import type {
   CreateRecipientInput,

@@ -256,7 +256,8 @@ export default function BankDetailsModal({
     if (!isOpen) return;
     setBanksLoading(true);
     setBanksError('');
-    fetch('/api/banks')
+    const abortController = new AbortController();
+    fetch('/api/banks', { signal: abortController.signal })
       .then((r) => r.json())
       .then((json: { success: boolean; data: Bank[]; message?: string }) => {
         if (json.success) {
@@ -265,8 +266,16 @@ export default function BankDetailsModal({
           setBanksError(json.message ?? 'Failed to load banks');
         }
       })
-      .catch(() => setBanksError('Failed to load banks. Please try again.'))
-      .finally(() => setBanksLoading(false));
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        setBanksError('Failed to load banks. Please try again.');
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) setBanksLoading(false);
+      });
+    return () => {
+      abortController.abort();
+    };
   }, [isOpen]);
 
   // Fetch a locked quote when the user reaches step 3
