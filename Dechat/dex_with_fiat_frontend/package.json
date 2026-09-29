@@ -11,7 +11,10 @@
     "format": "prettier --write \"src\" \"tests/e2e\" \"*.{ts,mjs,json}\"",
     "check": "prettier --check \"src\" \"tests/e2e\" \"*.{ts,mjs,json}\"",
     "test:unit": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "pnpm typecheck:src && pnpm typecheck:tests",
+    "typecheck:src": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
@@ -23,6 +26,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@sentry/nextjs": "^10.50.0",
+    "@sentry/replay": "^10.68.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.6.1",
     "@types/react-window": "^1.8.8",
@@ -39,6 +43,7 @@
     "react-markdown": "^9.0.1",
     "react-window": "^1.8.10",
     "recharts": "^3.8.1",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.5.0",
     "uuid": "^10.0.0",
     "zod": "^4.3.6"

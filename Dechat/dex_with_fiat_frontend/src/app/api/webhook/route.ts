@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { telemetry } from '@/lib/telemetry';
 import { isReplayEvent } from '@/lib/transferStore';
 import { getTransferStatus, setTransferStatus } from '@/lib/transferStore';
-import { env } from '@/lib/env';
+import { serverEnv as env } from '@/lib/serverEnv';
 import { publishPaymentStatus } from '@/lib/paymentStatusEvents';
 
 interface PaystackWebhookData {

@@ -398,15 +398,6 @@ All notable changes to this project will be documented in this file.
 - **frontend:** Reject malformed JSON on create-recipient and cover validation/rate-limit
 - **frontend:** Add ARIA live-region announcements to AuditTable
 - **contract:** Expose paginated view functions for token allowlist and denylist operations
-- **contract:** Add per-caller nonce replay protection to withdraw_fees_batch
-- **contract:** Record a timelock delay before cancel_upgrade takes effect
-- **contract:** Add a circuit-breaker guard to execute_withdrawal
-- Feat(contract): emit a structured event on every set_operator state change
-Repo Avatar
-- **contract:** Add an explicit bounds check to set_withdrawal_quota
-- **contract:** Add an explicit bounds check to set_daily_deposit_limit
-- **contract:** Report the operator transition and roster size from set_operator
-- **frontend:** Add typed telemetry tracking to useBridgeStats
 - Feat(contract): emit a structured event on every prune_inact
 - Feat(contract): emit a structured event on every prune_inact
 - Feat(contract): emit a structured event on every prune_inact
@@ -416,6 +407,15 @@ Repo Avatar
 - Feat(contract): add replay protection via a per-caller nonce
 - Feat(contract): add replay protection via a per-caller nonce
 - **contract:** Add init replay protection
+- **contract:** Add per-caller nonce replay protection to withdraw_fees_batch
+- **contract:** Record a timelock delay before cancel_upgrade takes effect
+- **contract:** Add a circuit-breaker guard to execute_withdrawal
+- Feat(contract): emit a structured event on every set_operator state change
+Repo Avatar
+- **contract:** Add an explicit bounds check to set_withdrawal_quota
+- **contract:** Add an explicit bounds check to set_daily_deposit_limit
+- **contract:** Report the operator transition and roster size from set_operator
+- **frontend:** Add typed telemetry tracking to useBridgeStats
 - **contract:** Add bounds check to set_limit_max_cap and circuit breaker invariant tests
 - **contract,frontend:** Add execute_withdrawal invariants and frontend UX updates
 - **frontend:** Add CSP and security headers in next.config.ts
@@ -856,9 +856,10 @@ Repo Avatar
 - **contract:** Correct edge case validation in execute_admin_action
 - **contract:** Correct edge case validation in deposit
 - **contract:** Correct edge case validation in set_fiat_limit, set_cooldown, set_withdrawal_cooldown
+- Test(contract): add Soroban invariant tests for execute_upgr
+- Test(contract): add Soroban invariant tests for execute_upgr
+- Resolve issues 1-4 including tests and env configurations
 - **contract:** Restore the nonce storage keys a merge dropped
-- Test(contract): add Soroban invariant tests for execute_upgr
-- Test(contract): add Soroban invariant tests for execute_upgr
 - **contract:** Correct edge case validation in rescue_token
 - **contract:** Add edge case validation and tests for pause/unpause/rescue_token + test(frontend): add Playwright E2E coverage for AuditTable
 - **frontend:** Implement server-verified admin session with nonce/signature flow
@@ -892,6 +893,8 @@ Repo Avatar
 - **contract:** Stop token allowlist indexes from accumulating duplicates
 - **frontend:** StellarChatInterface reads navigator.onLine during render and duplicates the useOnlineStatus/useMediaQuery hooks
 - **frontend:** FAQ substring matching intercepts transactional messages before the parser and AI run
+- **frontend:** Confirm bank transfer success via real status, not a timer
+- **frontend:** Url-encode Paystack account-resolve params and tighten payout schemas
 
 ### Changed
 
@@ -1136,9 +1139,6 @@ Repo Avatar
 - **frontend:** Add unit test coverage for useAccessibleModal
 - **frontend:** Add Playwright E2E coverage for OfflineStatusBanner, ChatInput, ChatSearchPanel and ErrorBoundary
 - **contracts:** Add invariant testing guide and improve inline documentation
-- **contract:** Add invariant tests for get_next_priority_withdrawal
-- **contract:** Add invariant tests for request_withdrawal
-- **contract:** Document the three new withdrawal/operator invariant suites
 - Expand set_circuit_breaker_threshold doc comment
 - Expand set_circuit_breaker_reset_window doc comment
 - Expand reset_circuit_breaker doc comment
@@ -1148,6 +1148,9 @@ Repo Avatar
 - Add implementation review for heartbeat nonce-based replay protection
 - Add implementation review for fee vault typed reads
 - Improve inline documentation and architectural guides for overflow prevention
+- **contract:** Add invariant tests for get_next_priority_withdrawal
+- **contract:** Add invariant tests for request_withdrawal
+- **contract:** Document the three new withdrawal/operator invariant suites
 - **contract:** Add regression tests for rescue_token edge cases
 - **contract:** Add Soroban invariant tests for get_withdrawal_request
 - **contract:** Add Soroban invariant tests for cancel_withdrawal
@@ -1196,6 +1199,10 @@ Repo Avatar
 - **contract:** Add Soroban invariant tests for withdraw
 - **contract:** Add Soroban invariant tests for is_circuit_breaker_tripped
 - **contract:** Add Soroban invariant tests for withdraw_fees_batch
+- **changelog:** Update changelog [skip ci]
+- **changelog:** Update changelog [skip ci]
+- **repo:** Add CODEOWNERS and document required branch protection
+- Run cargo-deny and pnpm audit on a weekly schedule
 
 ### Deprecated
 
@@ -1754,3 +1761,6 @@ Issue 1-4: Smart contract security and invariant test fixes
 - Merge pull request #1541 from xeladev4/fix/webhook-security-minimal
 
 fix(frontend): add minimal security hardening for webhook and transfe…
+- Merge pull request #1563 from Mrwicks00/fix/1455-1458-1478-1479-ci-security-hardening
+
+Fix/1455 1458 1478 1479 ci security hardening

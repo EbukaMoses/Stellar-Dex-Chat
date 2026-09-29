@@ -1,4 +1,4 @@
-import { env } from '@/lib/env';
+import { serverEnv as env } from '@/lib/serverEnv';
 
 // Extend global type for cleanup intervals
 declare global {
