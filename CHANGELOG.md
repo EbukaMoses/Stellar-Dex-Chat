@@ -1241,6 +1241,7 @@ Repo Avatar
 - **contract:** Improve inline docs and add validation for set_operator_daily_limit
 - **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
+- **changelog:** Update changelog [skip ci]
 
 ### Deprecated
 
