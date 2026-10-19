@@ -1748,6 +1748,9 @@ impl FiatBridge {
     ///
     /// # Errors
     /// * [`Error::RequestNotFound`] – If `request_id` does not exist.
+    /// * [`Error::AddressDenied`] – If `request.to` was added to the denylist after the request
+    ///   was queued. Checked before any state change or transfer; removing the address from the
+    ///   denylist makes the request executable again.
     /// * [`Error::StaleNonce`] / [`Error::InvalidNonce`] – If replay protection nonce is invalid.
     /// * [`Error::WithdrawalLocked`] – If request is still within timelock.
     /// * [`Error::AntiSandwichDelayActive`] – If executed before anti-sandwich delay expires.
@@ -1769,6 +1772,9 @@ impl FiatBridge {
             .persistent()
             .get(&DataKey::WithdrawQueue(request_id))
             .ok_or(Error::RequestNotFound)?;
+
+        // Denylist: the recipient may have been sanctioned after queuing.
+        Self::reject_if_denied(&env, &request.to)?;
 
         // Validate nonce for replay protection. Checked here without writing
         // (a later failure — lock, slippage, insufficient funds — must not
@@ -5746,3 +5752,6 @@ mod test_token_allowlist_invariants;
 
 #[cfg(test)]
 mod test_issue_994_1003;
+
+#[cfg(test)]
+mod test_execute_withdrawal_denylist;
