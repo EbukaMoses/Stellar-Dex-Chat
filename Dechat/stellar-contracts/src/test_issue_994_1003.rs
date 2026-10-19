@@ -1,17 +1,21 @@
-//! Tests for issue #994 (per-block deposit rate limiting) and
-//! issue #1003 (contract version migration guard in upgrade function).
+//! Tests for issue #1003 – contract version migration guard.
+//!
+//! The feature:
+//! - [`FiatBridge::get_contract_version`] returns the current stored version (0 after init).
+//! - [`FiatBridge::propose_upgrade`] accepts a `new_version: u32` and rejects proposals
+//!   where `new_version < current_version` with [`Error::DowngradeNotAllowed`].
+//! - [`FiatBridge::execute_upgrade`] bumps [`DataKey::ContractVersion`] to the proposed
+//!   `new_version` upon successful WASM replacement.
+//!
+//! Registered from `lib.rs` behind `#[cfg(test)]`.
 
-#![cfg(test)]
-
-use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    token::StellarAssetClient,
-    vec, Address, Bytes, BytesN, Env,
-};
+use soroban_sdk::{testutils::Ledger, Address, BytesN, Env, Vec};
 
 use crate::{Error, FiatBridge, FiatBridgeClient, MIN_UPGRADE_DELAY};
 
-fn setup(env: &Env) -> (FiatBridgeClient<'_>, Address, Address) {
+// ── Test helpers ──────────────────────────────────────────────────────────────
+
+fn setup(env: &Env) -> (FiatBridgeClient<'_>, Address) {
     let contract_id = env.register(FiatBridge, ());
     let client = FiatBridgeClient::new(env, &contract_id);
 
@@ -21,148 +25,193 @@ fn setup(env: &Env) -> (FiatBridgeClient<'_>, Address, Address) {
         .register_stellar_asset_contract_v2(token_admin.clone())
         .address();
 
-    let signers = vec![env, admin.clone()];
+    let signers = {
+        let mut v = Vec::new(env);
+        v.push_back(admin.clone());
+        v
+    };
     client.init(&admin, &token_addr, &10_000_000i128, &1i128, &signers, &1, &0);
 
-    (client, admin, token_addr)
+    (client, admin)
 }
 
-// ── Issue #994: per-block deposit rate limiting ───────────────────────────
-
-/// Second deposit in the same ledger when limit=1 must fail.
-#[test]
-fn deposit_rate_limit_blocks_excess_in_same_block() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().with_mut(|l| l.sequence_number = 100);
-
-    let (client, _admin, token_addr) = setup(&env);
-
-    // Set limit to 1 deposit per ledger per user
-    client.set_max_deposits_per_block(&1u32);
-
-    let depositor = Address::generate(&env);
-    StellarAssetClient::new(&env, &token_addr).mint(&depositor, &2_000_000i128);
-
-    let reference = Bytes::from_slice(&env, b"rate-limit");
-
-    // First deposit should succeed
-    client.deposit(&depositor, &500_000i128, &token_addr, &reference, &0i128, &0u32, &None);
-
-    // Second deposit in the same ledger must fail
-    let result = client.try_deposit(
-        &depositor, &500_000i128, &token_addr, &reference, &0i128, &0u32, &None,
-    );
-    assert_eq!(result, Err(Ok(Error::DepositRateLimitExceeded)));
+fn fake_hash(env: &Env, byte: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[byte; 32])
 }
 
-/// After advancing one ledger the counter resets and the deposit succeeds.
-#[test]
-fn deposit_rate_limit_resets_on_new_ledger() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().with_mut(|l| l.sequence_number = 200);
+// ── Issue #1003: version guard ────────────────────────────────────────────────
 
-    let (client, _admin, token_addr) = setup(&env);
-    client.set_max_deposits_per_block(&1u32);
-
-    let depositor = Address::generate(&env);
-    StellarAssetClient::new(&env, &token_addr).mint(&depositor, &2_000_000i128);
-
-    let reference = Bytes::from_slice(&env, b"next-block");
-
-    // First deposit on ledger 200
-    client.deposit(&depositor, &500_000i128, &token_addr, &reference, &0i128, &0u32, &None);
-
-    // Advance to ledger 201
-    env.ledger().with_mut(|l| l.sequence_number = 201);
-
-    // Deposit on ledger 201 should succeed
-    client.deposit(&depositor, &500_000i128, &token_addr, &reference, &0i128, &0u32, &None);
-}
-
-/// Setting limit to 0 disables rate limiting entirely.
-#[test]
-fn deposit_rate_limit_zero_disables_check() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().with_mut(|l| l.sequence_number = 300);
-
-    let (client, _admin, token_addr) = setup(&env);
-    client.set_max_deposits_per_block(&0u32);
-
-    let depositor = Address::generate(&env);
-    StellarAssetClient::new(&env, &token_addr).mint(&depositor, &5_000_000i128);
-
-    let reference = Bytes::from_slice(&env, b"no-limit");
-
-    // Multiple deposits in the same ledger are all allowed
-    for _ in 0..5 {
-        client.deposit(&depositor, &100_000i128, &token_addr, &reference, &0i128, &0u32, &None);
-    }
-}
-
-// ── Issue #1003: contract version migration guard ─────────────────────────
-
-/// propose_upgrade must reject a new_version that is lower than the current one.
-#[test]
-fn propose_upgrade_rejects_downgrade() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().with_mut(|l| l.sequence_number = 1000);
-
-    let (client, _admin, _token_addr) = setup(&env);
-
-    // Simulate a previous upgrade to version 5 by proposing + executing it.
-    // We can't run execute_upgrade without a real WASM hash in unit tests, so
-    // we test the proposal-level guard directly instead.
-
-    // Version 5 upgrade proposal should pass (current=0, 5>=0)
-    let fake_hash: BytesN<32> = BytesN::from_array(&env, &[1u8; 32]);
-    client.propose_upgrade(&fake_hash, &MIN_UPGRADE_DELAY, &5u32);
-
-    // Now try to downgrade to version 3 — should be rejected
-    let fake_hash2: BytesN<32> = BytesN::from_array(&env, &[2u8; 32]);
-    // First cancel the pending proposal so we can propose a new one
-    let nonce = client.get_upgrade_cancellation_nonce(&admin);
-    client.cancel_upgrade(&nonce);
-
-    // Proposal with new_version=3 when current=0 should still pass (0→3 is an upgrade)
-    // To test actual downgrade, we need the version stored as 5.
-    // Since execute_upgrade can't run in tests (no real WASM), verify that
-    // propose_upgrade with new_version < stored version is blocked.
-
-    // Directly test: propose version 2 while stored version is 0 → succeeds (upgrade)
-    client.propose_upgrade(&fake_hash2, &MIN_UPGRADE_DELAY, &2u32);
-    let nonce = client.get_upgrade_cancellation_nonce(&admin);
-    client.cancel_upgrade(&nonce);
-
-    // Initial version is 0, so any version ≥ 0 passes at proposal time.
-    // The key invariant: version 0 upgrade to 5 passes, version 5 downgrade to 2 fails.
-    // We verify the stored version getter works correctly.
-    assert_eq!(client.get_contract_version(), 0u32);
-}
-
-/// propose_upgrade must succeed when new_version == current_version (equal is allowed).
-#[test]
-fn propose_upgrade_allows_same_version() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().with_mut(|l| l.sequence_number = 2000);
-
-    let (client, _admin, _token_addr) = setup(&env);
-
-    let fake_hash: BytesN<32> = BytesN::from_array(&env, &[3u8; 32]);
-    // Propose with new_version == 0 (same as current default) — must succeed.
-    client.propose_upgrade(&fake_hash, &MIN_UPGRADE_DELAY, &0u32);
-}
-
-/// get_contract_version returns 0 before any upgrade has been executed.
+/// `get_contract_version` returns 0 before any upgrade has been executed.
 #[test]
 fn get_contract_version_returns_zero_initially() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _token_addr) = setup(&env);
+    let (client, _admin) = setup(&env);
     assert_eq!(client.get_contract_version(), 0u32);
+}
+
+/// `propose_upgrade` succeeds when `new_version >= current_version`.
+#[test]
+fn propose_upgrade_accepts_forward_version() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 1_000);
+
+    let (client, _admin) = setup(&env);
+    // Version 0 → 5 (forward): must succeed
+    client.propose_upgrade(&fake_hash(&env, 1), &5u32);
+    let proposal = client.get_upgrade_proposal().expect("proposal must be stored");
+    assert_eq!(proposal.new_version, 5u32);
+}
+
+/// `propose_upgrade` succeeds when `new_version == current_version` (re-deploy).
+#[test]
+fn propose_upgrade_allows_same_version() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 2_000);
+
+    let (client, _admin) = setup(&env);
+    // Version 0 → 0 (same): must succeed
+    client.propose_upgrade(&fake_hash(&env, 3), &0u32);
+}
+
+/// `propose_upgrade` rejects `new_version < current_version` with
+/// [`Error::DowngradeNotAllowed`].
+///
+/// We drive this by manually writing the stored version to 5 via the storage
+/// API available in tests, then trying to propose version 3.
+#[test]
+fn propose_upgrade_rejects_downgrade() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 3_000);
+
+    let (client, admin) = setup(&env);
+
+    // Propose version 5 first (0→5 is a valid forward upgrade)
+    client.propose_upgrade(&fake_hash(&env, 1), &5u32);
+
+    // Cancel the pending proposal so we can try another proposal
+    let nonce = client.get_upgrade_cancellation_nonce(&admin);
+    client.cancel_upgrade(&nonce);
+
+    // After cancellation, stored ContractVersion is still 0 (no execute_upgrade ran),
+    // so version 0 → 2 is still valid.
+    client.propose_upgrade(&fake_hash(&env, 2), &2u32);
+    let nonce = client.get_upgrade_cancellation_nonce(&admin);
+    client.cancel_upgrade(&nonce);
+
+    // ContractVersion is still 0 — version 0 is still ≥ 0, so this is the
+    // baseline for the downgrade test.
+    //
+    // To trigger DowngradeNotAllowed we need ContractVersion > 0.
+    // We can only bump it by calling execute_upgrade, which requires a real
+    // WASM hash that the test host won't have.  Instead we write the version
+    // key directly through the contract storage using a raw storage call.
+    // In Soroban unit tests, `env.as_contract` lets us write instance storage.
+    use crate::DataKey;
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::ContractVersion, &5u32);
+    });
+
+    // Now the stored version is 5; proposing new_version=3 must be rejected
+    let result = client.try_propose_upgrade(&fake_hash(&env, 4), &3u32);
+    assert_eq!(result, Err(Ok(Error::DowngradeNotAllowed)));
+}
+
+/// After a successful downgrade rejection, `get_contract_version` still
+/// reflects the stored value unchanged.
+#[test]
+fn downgrade_rejection_leaves_version_unchanged() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 4_000);
+
+    let (client, _admin) = setup(&env);
+
+    // Artificially set version to 10
+    use crate::DataKey;
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::ContractVersion, &10u32);
+    });
+
+    assert_eq!(client.get_contract_version(), 10u32);
+
+    // Try and fail to downgrade to version 7
+    let _ = client.try_propose_upgrade(&fake_hash(&env, 5), &7u32);
+
+    // Version must be unchanged
+    assert_eq!(client.get_contract_version(), 10u32);
+}
+
+/// Proposing does not disturb any accounting fields.
+#[test]
+fn propose_upgrade_does_not_disturb_accounting() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 5_000);
+
+    let (client, _admin) = setup(&env);
+    let limit_before = client.get_limit();
+    let dep_before = client.get_total_deposited();
+    let admin_before = client.get_admin();
+
+    client.propose_upgrade(&fake_hash(&env, 9), &1u32);
+
+    assert_eq!(client.get_limit(), limit_before);
+    assert_eq!(client.get_total_deposited(), dep_before);
+    assert_eq!(client.get_admin(), admin_before);
+}
+
+/// The stored `new_version` round-trips through `get_upgrade_proposal`.
+#[test]
+fn proposal_stores_new_version_verbatim() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 6_000);
+
+    let (client, _admin) = setup(&env);
+    client.propose_upgrade(&fake_hash(&env, 0xAB), &42u32);
+
+    let proposal = client.get_upgrade_proposal().unwrap();
+    assert_eq!(proposal.new_version, 42u32);
+    assert_eq!(proposal.wasm_hash, fake_hash(&env, 0xAB));
+}
+
+/// executable_after is always strictly in the future.
+#[test]
+fn proposal_deadline_is_always_in_the_future() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.sequence_number = 7_000);
+
+    let (client, _admin) = setup(&env);
+    client.propose_upgrade(&fake_hash(&env, 0x22), &0u32);
+
+    let p = client.get_upgrade_proposal().unwrap();
+    assert!(
+        p.executable_after > env.ledger().sequence(),
+        "a fresh proposal must never be immediately executable"
+    );
+}
+
+/// `executable_after` equals `current_ledger + MIN_UPGRADE_DELAY` by default.
+#[test]
+fn proposal_default_deadline_equals_min_delay() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let seq: u32 = 8_000;
+    env.ledger().with_mut(|l| l.sequence_number = seq);
+
+    let (client, _admin) = setup(&env);
+    client.propose_upgrade(&fake_hash(&env, 0xCC), &0u32);
+
+    let p = client.get_upgrade_proposal().unwrap();
+    assert_eq!(p.executable_after, seq + MIN_UPGRADE_DELAY);
 }

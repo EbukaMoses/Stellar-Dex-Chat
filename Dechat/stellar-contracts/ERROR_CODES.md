@@ -46,6 +46,7 @@ Generated from the `Error` enum in `Dechat/stellar-contracts/src/lib.rs`.
 | 605 | `UpgradeNotReady` | Governance & Timelock | Upgrade timelock has not elapsed |
 | 606 | `UpgradeProposalMissing` | Governance & Timelock | No upgrade proposal pending |
 | 607 | `UpgradeDelayTooShort` | Governance & Timelock | Upgrade delay is below MIN_UPGRADE_DELAY |
+| 608 | `DowngradeNotAllowed` | Governance & Timelock | Proposed `new_version` is less than current stored contract version |
 | 701 | `OracleNotSet` | External Services | Oracle not configured |
 | 702 | `OraclePriceInvalid` | External Services | Oracle returned invalid price |
 | 704 | `SlippageTooHigh` | External Services | Slippage is too high for this operation |
@@ -73,7 +74,7 @@ Generated from the `Error` enum in `Dechat/stellar-contracts/src/lib.rs`.
 | Constraints | 301–319 | Amount, limit, and business rule validation |
 | Funds & Balances | 401–402 | Balance checks and fee management |
 | Withdrawal Queue | 501–502 | Withdrawal request processing |
-| Governance & Timelock | 601–602, 605–607 | Admin actions and contract upgrades |
+| Governance & Timelock | 601–602, 605–608 | Admin actions and contract upgrades |
 | External Services | 701–702, 704 | Oracle and pricing integration |
 | Quota & Migration | 801–802 | Quota enforcement and data migrations |
 | Replay Protection | 901–902 | Nonce validation |
