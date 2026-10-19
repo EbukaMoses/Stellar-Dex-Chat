@@ -4797,7 +4797,7 @@ fn test_execute_upgrade_before_delay_fails_with_upgrade_not_ready() {
     let (_, bridge, _, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash, &1_000, &1);
+    bridge.propose_upgrade(&proposed_wasm_hash, &1u32);
 
     let result = bridge.try_execute_upgrade();
     assert_eq!(result, Err(Ok(Error::UpgradeNotReady)));
@@ -4811,7 +4811,7 @@ fn test_cancel_upgrade_removes_pending_proposal() {
     let (_, bridge, admin, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash, &1_000, &1);
+    bridge.propose_upgrade(&proposed_wasm_hash, &1u32);
     assert!(bridge.get_upgrade_proposal().is_some());
 
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
@@ -4841,7 +4841,7 @@ fn test_cancel_upgrade_with_valid_nonce_succeeds() {
     let (_, bridge, admin, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
 
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
     assert_eq!(nonce, 0);
@@ -4859,7 +4859,7 @@ fn test_cancel_upgrade_with_stale_nonce_fails() {
     let (_, bridge, admin, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
 
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
     let result = bridge.try_cancel_upgrade(&nonce);
@@ -4878,7 +4878,7 @@ fn test_cancel_upgrade_with_future_nonce_fails() {
     let (_, bridge, admin, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
 
     // Try to use a future nonce
     let result = bridge.try_cancel_upgrade(&5);
@@ -4893,14 +4893,14 @@ fn test_cancel_upgrade_replay_attack_prevented() {
     let (_, bridge, admin, _, _, _) = setup_bridge(&env, 500);
 
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
 
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
     let result = bridge.try_cancel_upgrade(&nonce);
     assert_eq!(result, Ok(Ok(())));
 
     // Propose again
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
 
     // Try to replay with old nonce
     let result = bridge.try_cancel_upgrade(&nonce);
@@ -4922,7 +4922,7 @@ fn test_cancel_upgrade_nonce_increments_monotonically() {
     let proposed_wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
 
     // First cancellation
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
     assert_eq!(nonce, 0);
     let result = bridge.try_cancel_upgrade(&nonce);
@@ -4930,7 +4930,7 @@ fn test_cancel_upgrade_nonce_increments_monotonically() {
     assert_eq!(bridge.get_upgrade_cancellation_nonce(&admin), 1);
 
     // Second cancellation
-    bridge.propose_upgrade(&proposed_wasm_hash);
+    bridge.propose_upgrade(&proposed_wasm_hash, &0u32);
     let nonce = bridge.get_upgrade_cancellation_nonce(&admin);
     assert_eq!(nonce, 1);
     let result = bridge.try_cancel_upgrade(&nonce);
@@ -5023,7 +5023,7 @@ fn test_execute_upgrade_after_delay_succeeds() {
     let wasm_hash = env
         .deployer()
         .upload_contract_wasm(Bytes::from_slice(&env, fixture_wasm.as_slice()));
-    bridge.propose_upgrade(&wasm_hash, &1000, &1);
+    bridge.propose_upgrade(&wasm_hash, &1u32);
 
     let start = env.ledger().sequence();
     env.ledger().with_mut(|li| {

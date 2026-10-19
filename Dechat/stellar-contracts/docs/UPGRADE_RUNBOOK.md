@@ -46,7 +46,8 @@ Admin                       Contract
 Key rules:
 - `set_upgrade_delay` must set `delay ≥ MIN_UPGRADE_DELAY` (1 000 ledgers); shorter delays are rejected with
   `Error::UpgradeDelayTooShort (607)`.
-- `propose_upgrade` takes only the WASM hash; delay is read from stored `UpgradeDelay` value.
+- `propose_upgrade` takes the WASM hash and a caller-declared `new_version` u32;
+  the delay is read from stored `UpgradeDelay` value.
 - `execute_upgrade` uses a **`>=`** check, so execution is possible once
   `current_ledger >= executable_after`.
 - Only one proposal can be pending at a time; proposing again overwrites the previous one.
@@ -98,7 +99,9 @@ Confirm that:
 - New `withdraw_fees` error variants are appended to `ERROR_CODES.md`.
 - New `withdraw_fees` events use the `EVENT_VERSION` topic prefix.
 - The per-caller nonce migration for `withdraw_fees` described in `NONCE_REPLAY_PROTECTION.md` is included.
-- The `new_version` constant in `lib.rs` is greater than the currently deployed version.
+- The `new_version` argument to `propose_upgrade` must be ≥ the value returned by
+  `get_contract_version`; a strictly lower value is rejected with
+  `Error::DowngradeNotAllowed (608)`.
 - Any storage layout changes ship with a migration path.
 
 ### 4. Run the Full Test Suite
@@ -126,6 +129,13 @@ stellar contract invoke \
   --network-passphrase "$NETWORK_PASSPHRASE" \
   --rpc-url $RPC_URL \
   -- get_upgrade_proposal
+
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network $NETWORK \
+  --network-passphrase "$NETWORK_PASSPHRASE" \
+  --rpc-url $RPC_URL \
+  -- get_contract_version
 
 stellar contract invoke \
   --id $CONTRACT_ID \
@@ -183,10 +193,13 @@ stellar contract invoke \
   --network $NETWORK \
   --source-account $ADMIN_SECRET \
   -- propose_upgrade \
-  --new_wasm_hash $NEW_WASM_HASH_HEX
+  --new_wasm_hash $NEW_WASM_HASH_HEX \
+  --new_version $NEW_VERSION_NUMBER
 ```
 
-Expected: no error; event emitted on-chain.
+Expected: no error; event emitted on-chain.  `$NEW_VERSION_NUMBER` must be
+≥ the value returned by `get_contract_version` (see Pre-Upgrade Checklist §5);
+otherwise the transaction will fail with `Error::DowngradeNotAllowed (608)`.
 
 Record:
 - Proposal ledger: `current_ledger`
@@ -237,6 +250,14 @@ stellar contract invoke \
 ```
 
 Verify the returned value is `None`, indicating the proposal has been executed and cleared.
+
+```bash
+# Confirm the version was bumped to the proposed value
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network $NETWORK \
+  -- get_contract_version
+```
 
 ### 2. Smoke-Test Read Functions
 

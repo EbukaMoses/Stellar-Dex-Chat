@@ -98,6 +98,10 @@ pub enum Error {
     UpgradeNotReady = 605,
     UpgradeProposalMissing = 606,
     UpgradeDelayTooShort = 607,
+    /// Returned by [`FiatBridge::propose_upgrade`] when `new_version` is
+    /// strictly less than the currently stored contract version, preventing
+    /// accidental rollbacks to an older schema.
+    DowngradeNotAllowed = 608,
 
     // --- 700 series: External Services ---
     OracleNotSet = 701,
@@ -212,6 +216,10 @@ pub struct UserDailyVolume {
 pub struct UpgradeProposal {
     pub wasm_hash: BytesN<32>,
     pub executable_after: u32,
+    /// The contract version that will become current once this proposal is
+    /// executed.  Stored here so [`FiatBridge::execute_upgrade`] can bump
+    /// [`DataKey::ContractVersion`] atomically with the WASM swap.
+    pub new_version: u32,
 }
 
 /// Auditable timing metadata for an upgrade proposal.
@@ -890,6 +898,11 @@ pub enum DataKey {
     UpgradeProposal,
     UpgradeDelay,
     UpgradeProposalTiming,
+    // ── Issue #1003: contract version migration guard ────────────────────
+    /// Monotonically increasing contract version.  Written to `0` on first
+    /// `init` and bumped to `new_version` by every successful
+    /// `execute_upgrade`.
+    ContractVersion,
     // ── Issue #100: M-of-N multi-signature admin control ─────────────────
     Signers,
     Threshold,
@@ -1050,6 +1063,8 @@ impl FiatBridge {
             .set(&DataKey::TokenRegistry(token.clone()), &config);
 
         env.storage().instance().set(&DataKey::SchemaVersion, &1u32);
+        // ── Issue #1003: initialise contract version to 0 ────────────────
+        env.storage().instance().set(&DataKey::ContractVersion, &0u32);
         env.storage().instance().set(&DataKey::NextActionID, &0u64);
         env.storage()
             .instance()
@@ -5052,43 +5067,65 @@ impl FiatBridge {
 
     /// Proposes a contract WASM upgrade subject to a timelock delay.
     ///
+    /// The delay is read from the stored [`DataKey::UpgradeDelay`] value
+    /// (or [`MIN_UPGRADE_DELAY`] when none has been set).
+    ///
+    /// # Version Migration Guard (Issue #1003)
+    /// `new_version` must be ≥ the currently stored contract version
+    /// ([`DataKey::ContractVersion`]).  Proposing a `new_version` that is
+    /// strictly *less* than the current version is rejected with
+    /// [`Error::DowngradeNotAllowed`] to prevent accidental downgrades to
+    /// an older storage schema.
+    ///
     /// # Overflow Prevention & Safety Invariants
     /// - **Delay Bounds**: Validates `delay >= MIN_UPGRADE_DELAY`.
-    /// - **Saturating Timelock Sequence**: Calculates `executable_after = env.ledger().sequence().saturating_add(delay)`,
-    ///   ensuring that sequence number calculations cannot overflow or bypass the timelock.
+    /// - **Saturating Timelock Sequence**: Calculates
+    ///   `executable_after = env.ledger().sequence().saturating_add(delay)`,
+    ///   ensuring that sequence number calculations cannot overflow or bypass
+    ///   the timelock.
     ///
     /// # Arguments
     /// * `env` – The Soroban host environment.
     /// * `new_wasm_hash` – 32-byte hash of the newly uploaded WASM binary.
+    /// * `new_version` – Caller-declared version that the new WASM implements.
+    ///   Must be ≥ the currently stored contract version.
     ///
     /// # Errors
     /// * [`Error::Unauthorized`] – If caller is not admin.
+    /// * [`Error::DowngradeNotAllowed`] – If `new_version` < current stored version.
     pub fn propose_upgrade(
         env: Env,
         new_wasm_hash: BytesN<32>,
-        delay: u32,
-        _new_version: u32,
+        new_version: u32,
     ) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
 
-        // Validate delay is not zero to prevent immediate upgrade
-        if delay == 0 {
-            return Err(Error::UpgradeDelayTooShort);
+        // ── Issue #1003: version migration guard ─────────────────────────
+        let current_version: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ContractVersion)
+            .unwrap_or(0u32);
+        if new_version < current_version {
+            return Err(Error::DowngradeNotAllowed);
         }
 
-        // Validate delay meets minimum threshold to enforce timelock
-        if delay < MIN_UPGRADE_DELAY {
-            return Err(Error::UpgradeDelayTooShort);
-        }
+        // Read the configured upgrade delay (falls back to MIN_UPGRADE_DELAY)
+        let delay: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeDelay)
+            .unwrap_or(MIN_UPGRADE_DELAY);
 
         // Prevent overflow when calculating executable_after
         let current_ledger = env.ledger().sequence();
-        let executable_after = current_ledger.checked_add(delay).ok_or(Error::Overflow)?;
+        let executable_after = current_ledger.saturating_add(delay);
 
-        let proposed_at = env.ledger().sequence();
+        let proposed_at = current_ledger;
         let proposal = UpgradeProposal {
             wasm_hash: new_wasm_hash.clone(),
             executable_after,
+            new_version,
         };
 
         env.storage()
@@ -5139,6 +5176,12 @@ impl FiatBridge {
 
         env.deployer()
             .update_current_contract_wasm(proposal.wasm_hash.clone());
+
+        // ── Issue #1003: bump the stored contract version ────────────────
+        env.storage()
+            .instance()
+            .set(&DataKey::ContractVersion, &proposal.new_version);
+
         env.storage().instance().remove(&DataKey::UpgradeProposal);
         env.storage()
             .instance()
@@ -5183,6 +5226,19 @@ impl FiatBridge {
 
     pub fn get_upgrade_proposal(env: Env) -> Option<UpgradeProposal> {
         env.storage().instance().get(&DataKey::UpgradeProposal)
+    }
+
+    /// Returns the currently stored contract version.
+    ///
+    /// The version starts at `0` after [`FiatBridge::init`] and is bumped to
+    /// the `new_version` supplied to [`FiatBridge::propose_upgrade`] each time
+    /// [`FiatBridge::execute_upgrade`] succeeds.  Callers can use this to
+    /// confirm that a migration completed before relying on new storage layout.
+    pub fn get_contract_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ContractVersion)
+            .unwrap_or(0u32)
     }
 
     /// Return the ledger and delay recorded for the pending upgrade.
@@ -5687,3 +5743,6 @@ mod test_denylist_invariants;
 
 #[cfg(test)]
 mod test_token_allowlist_invariants;
+
+#[cfg(test)]
+mod test_issue_994_1003;

@@ -105,7 +105,7 @@ fn test_migrate_upgrade_proposal_timing_already_present() {
     env.ledger().with_mut(|li| {
         li.sequence_number = 100_000;
     });
-    bridge.propose_upgrade(&wasm_hash, &200_000, &2);
+    bridge.propose_upgrade(&wasm_hash, &2u32);
 
     let original_timing = env.as_contract(&contract_id, || {
         env.storage()
