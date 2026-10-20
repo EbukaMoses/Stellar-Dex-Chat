@@ -3295,6 +3295,15 @@ impl FiatBridge {
             }
         }
         let denied = env.storage().persistent().has(&DataKey::Denied(address));
+        // Emit event when address is checked for denylist status
+        events::extend(env, &events::Topics {
+            phantom: PhantomData,
+            attributes: (
+                StringVal::from_str(&env, "is_denied_checked"),
+                address.clone(),
+                StringVal::from_str(&env, if denied { "denied" } else { "allowed" }),
+            ),
+        });
         Ok(denied)
     }
 
