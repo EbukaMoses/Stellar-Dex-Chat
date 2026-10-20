@@ -916,6 +916,7 @@ Repo Avatar
 - **frontend:** Use theme-input-border on inputs in StellarFiatModal
 - **frontend:** Keep themed chart border colour on admin dashboard
 - **frontend:** Resolve UI stability and accessibility issues
+- **contract:** Improve validation and add loading states
 
 ### Changed
 
@@ -1239,6 +1240,7 @@ Repo Avatar
 - **changelog:** Update changelog [skip ci]
 - **contract:** Improve inline documentation for operator inactivity threshold
 - **contract:** Improve inline docs and add validation for set_operator_daily_limit
+- **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
