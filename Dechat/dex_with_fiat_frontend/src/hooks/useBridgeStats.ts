@@ -77,6 +77,7 @@ export type BridgeStats = {
   limit: bigint | null;
   totalDeposited: bigint | null;
   loading: boolean;
+  skeleton: boolean;
   error: string | null;
   fetchCount: number;
   lastFetchedAt: Date | null;
@@ -138,6 +139,7 @@ export default function useBridgeStats(): BridgeStats {
   const [limit, setLimit] = useState<bigint | null>(null);
   const [totalDeposited, setTotalDeposited] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(false);
+  const [skeleton, setSkeleton] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
@@ -170,6 +172,7 @@ export default function useBridgeStats(): BridgeStats {
     const fetchId = ++fetchIdRef.current;
     const startedAt = Date.now();
     setLoading(true);
+    setSkeleton(false);
     setError(null);
     dispatchTelemetry('bridge_stats_fetch_start', { trigger });
     try {
@@ -261,6 +264,7 @@ export default function useBridgeStats(): BridgeStats {
     limit,
     totalDeposited,
     loading,
+    skeleton,
     error,
     fetchCount,
     lastFetchedAt,

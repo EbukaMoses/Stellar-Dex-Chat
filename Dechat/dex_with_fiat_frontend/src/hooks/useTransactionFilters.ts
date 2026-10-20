@@ -354,7 +354,8 @@ export function useTransactionFilters(
           }
         : {};
       return deserializeFilters(searchParams, validOptions);
-    } catch {
+    } catch (err) {
+      setFilterSyncError(err instanceof Error ? err : new Error(String(err)));
       // Fallback for SSR/SSG
       return { status: [], asset: [], network: [] };
     }
@@ -387,12 +388,22 @@ export function useTransactionFilters(
 
   // Compute filtered transactions
   const filteredTransactions = useMemo(() => {
-    return filterTransactions(transactions, filterState);
+    try {
+      return filterTransactions(transactions, filterState);
+    } catch (err) {
+      setFilterSyncError(err instanceof Error ? err : new Error(String(err)));
+      return transactions;
+    }
   }, [transactions, filterState]);
 
   // Compute filter statistics
   const filterStats = useMemo(() => {
-    return computeFilterStats(transactions, filterState);
+    try {
+      return computeFilterStats(transactions, filterState);
+    } catch (err) {
+      setFilterSyncError(err instanceof Error ? err : new Error(String(err)));
+      return { statusOptions: [], assetOptions: [], networkOptions: [] };
+    }
   }, [transactions, filterState]);
 
   // Check if any filters are active
