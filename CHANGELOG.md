@@ -435,6 +435,7 @@ Repo Avatar
 - Add chat message copy action
 - Expose optimistic beneficiary updates
 - **frontend:** Dark mode fallback in useBridgeStats + error boundary on TransactionAmountDisplay
+- Implement minimal updates for issues #714, #723, #728, #729
 
 ### Fixed
 
@@ -1240,6 +1241,7 @@ Repo Avatar
 - **changelog:** Update changelog [skip ci]
 - **contract:** Improve inline documentation for operator inactivity threshold
 - **contract:** Improve inline docs and add validation for set_operator_daily_limit
+- **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
 - **changelog:** Update changelog [skip ci]
