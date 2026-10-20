@@ -3284,6 +3284,16 @@ impl FiatBridge {
         if count == u64::MAX {
             return Err(Error::Overflow);
         }
+        // Boundary check: index lookups must stay within count range
+        if count > 0 {
+            for i in 0..count {
+                let _ = env
+                    .storage()
+                    .persistent()
+                    .get::<_, Option<Address>>(&DataKey::DeniedIndex(i))
+                    .ok_or(Error::Overflow)?;
+            }
+        }
         let denied = env.storage().persistent().has(&DataKey::Denied(address));
         Ok(denied)
     }
