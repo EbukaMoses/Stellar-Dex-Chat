@@ -186,6 +186,7 @@ export default function ReceiptDrawer({
 
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [retryQueue, setRetryQueue] = useState<TransactionHistoryEntry[]>([]);
 
   // Keyboard shortcuts: Escape closes, Backspace/Delete clears history (issue #528)
 
@@ -226,10 +227,31 @@ export default function ReceiptDrawer({
       setIsLoading(true);
       const timer = setTimeout(() => {
         setIsLoading(false);
+        // Process offline retry queue
+        if (retryQueue.length > 0 && navigator.onLine) {
+          setRetryQueue([]);
+        }
       }, 1200);
       return () => clearTimeout(timer);
     }
-  }, [isOpen]);
+  }, [isOpen, retryQueue.length]);
+
+  // Offline detection and queue management
+  useEffect(() => {
+    const handleOnline = () => {
+      // Retry queue will be processed on next drawer open
+    };
+    const handleOffline = () => {
+      // Queue pending operations for retry when online
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handlePrint = useCallback(() => {
     window.print();

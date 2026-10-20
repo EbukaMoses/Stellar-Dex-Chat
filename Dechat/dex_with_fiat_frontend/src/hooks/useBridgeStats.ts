@@ -77,6 +77,7 @@ export type BridgeStats = {
   limit: bigint | null;
   totalDeposited: bigint | null;
   loading: boolean;
+  skeleton: boolean;
   error: string | null;
   fetchCount: number;
   lastFetchedAt: Date | null;
@@ -138,11 +139,16 @@ export default function useBridgeStats(): BridgeStats {
   const [limit, setLimit] = useState<bigint | null>(null);
   const [totalDeposited, setTotalDeposited] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(false);
+  const [skeleton, setSkeleton] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   // Initialise to false (SSR-safe); updated to real value after first paint.
   const [prefersDark, setPrefersDark] = useState(false);
+  // Optimistic UI: Track pending updates for immediate feedback
+  const [pendingBalance, setPendingBalance] = useState<bigint | null>(null);
+  const [pendingLimit, setPendingLimit] = useState<bigint | null>(null);
+  const [pendingTotalDeposited, setPendingTotalDeposited] = useState<bigint | null>(null);
   // A client component may be rendered on the server before it is hydrated.
   // Keep async updates disabled until React has committed the client instance;
   // this makes the server snapshot and the first client render deterministic.
@@ -170,6 +176,7 @@ export default function useBridgeStats(): BridgeStats {
     const fetchId = ++fetchIdRef.current;
     const startedAt = Date.now();
     setLoading(true);
+    setSkeleton(false);
     setError(null);
     dispatchTelemetry('bridge_stats_fetch_start', { trigger });
     try {
@@ -257,10 +264,11 @@ export default function useBridgeStats(): BridgeStats {
   }, []);
 
   return {
-    balance,
-    limit,
-    totalDeposited,
+    balance: pendingBalance ?? balance,
+    limit: pendingLimit ?? limit,
+    totalDeposited: pendingTotalDeposited ?? totalDeposited,
     loading,
+    skeleton,
     error,
     fetchCount,
     lastFetchedAt,

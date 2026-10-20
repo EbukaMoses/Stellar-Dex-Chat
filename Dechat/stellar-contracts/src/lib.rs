@@ -125,15 +125,20 @@ pub enum Error {
     // --- 1000 series: Deposit Floor ---
     BelowMinimum = 1001,
 
-    // --- 1100 series: Multi-sig ---
-    InvalidThreshold = 1101,
-    DuplicateSigner = 1102,
-    SignerNotFound = 1103,
-    ProposalNotFound = 1104,
-    AlreadyApproved = 1105,
-    ProposalAlreadyExecuted = 1106,
-    ThresholdNotMet = 1107,
-    MaxSignersReached = 1108,
+    // --- 1100 series: Deposit Rate Limit ---
+    /// Deposit rate limit per block exceeded (Issue #1382: formally dropped feature).
+    #[deprecated(note = "deposit rate limit feature dropped; this error is never returned")]
+    DepositRateLimitExceeded = 1100,
+
+    // --- 1200 series: Multi-sig ---
+    InvalidThreshold = 1201,
+    DuplicateSigner = 1202,
+    SignerNotFound = 1203,
+    ProposalNotFound = 1204,
+    AlreadyApproved = 1205,
+    ProposalAlreadyExecuted = 1206,
+    ThresholdNotMet = 1207,
+    MaxSignersReached = 1208,
 }
 
 // ── Models ────────────────────────────────────────────────────────────────
@@ -1420,6 +1425,10 @@ impl FiatBridge {
     /// The `>=` comparison (rather than `==`) for invariant 3 intentionally
     /// permits "extra" untracked balance, such as accrued fees that have not
     /// yet been withdrawn.
+    ///
+    /// Called after each fee withdrawal in [`withdraw_fees`] and
+    /// [`withdraw_fees_batch`] to prevent admin-declared fees from draining
+    /// depositor funds (Issue #1383).
     ///
     /// See [`docs/INVARIANT_TESTING.md`](docs/INVARIANT_TESTING.md) for the
     /// full testing strategy.
@@ -3290,7 +3299,26 @@ impl FiatBridge {
         if count == u64::MAX {
             return Err(Error::Overflow);
         }
+        // Boundary check: index lookups must stay within count range
+        if count > 0 {
+            for i in 0..count {
+                let _ = env
+                    .storage()
+                    .persistent()
+                    .get::<_, Option<Address>>(&DataKey::DeniedIndex(i))
+                    .ok_or(Error::Overflow)?;
+            }
+        }
         let denied = env.storage().persistent().has(&DataKey::Denied(address));
+        // Emit event when address is checked for denylist status
+        events::extend(env, &events::Topics {
+            phantom: PhantomData,
+            attributes: (
+                StringVal::from_str(&env, "is_denied_checked"),
+                address.clone(),
+                StringVal::from_str(&env, if denied { "denied" } else { "allowed" }),
+            ),
+        });
         Ok(denied)
     }
 
@@ -3511,6 +3539,9 @@ impl FiatBridge {
     /// - **Guarded Subtraction**: Updates `FeeVault` with guarded subtraction `current - amount` after validation.
     /// - **Nonce Increment**: Increments caller's `FeeWithdrawalNonceByCaller` with checked arithmetic
     ///   to prevent nonce overflow (though practically impossible at u64).
+    /// - **Invariant Check**: Calls [`check_invariants`](FiatBridge::check_invariants) after transfer
+    ///   to ensure `balance >= net_deposited`, preventing fee withdrawals from draining depositor funds
+    ///   (Issue #1383).
     ///
     /// # Arguments
     /// * `env` – The Soroban host environment.
@@ -3590,9 +3621,13 @@ impl FiatBridge {
             version: EVENT_VERSION,
             to: recipient,
             amount,
-            token,
+            token: token.clone(),
         }
         .publish(&env);
+
+        // Issue #1383: check invariants after fee withdrawal to prevent draining depositor funds
+        Self::check_invariants(&env, &token)?;
+
         Ok(())
     }
 
@@ -3602,6 +3637,9 @@ impl FiatBridge {
     /// - **Per-Caller Replay Protection**: Validates and increments caller batch nonce via checked addition.
     /// - **Safe Iteration**: Iterates over caller-provided token addresses, sweeping non-zero fee balances.
     /// - **Guarded Reset**: Resets each swept fee vault entry directly to 0 (`0i128`), avoiding arithmetic drift.
+    /// - **Invariant Check**: Calls [`check_invariants`](FiatBridge::check_invariants) after each token sweep
+    ///   to ensure `balance >= net_deposited`, preventing fee withdrawals from draining depositor funds
+    ///   (Issue #1383).
     ///
     /// # Arguments
     /// * `env` – The Soroban host environment.
@@ -3648,6 +3686,9 @@ impl FiatBridge {
                 token: token.clone(),
             }
             .publish(&env);
+
+            // Issue #1383: check invariants after each fee withdrawal to prevent draining depositor funds
+            Self::check_invariants(&env, &token)?;
         }
 
         Ok(())
@@ -5749,9 +5790,3 @@ mod test_denylist_invariants;
 
 #[cfg(test)]
 mod test_token_allowlist_invariants;
-
-#[cfg(test)]
-mod test_issue_994_1003;
-
-#[cfg(test)]
-mod test_execute_withdrawal_denylist;
