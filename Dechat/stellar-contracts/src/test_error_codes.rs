@@ -57,14 +57,15 @@ fn error_codes_are_stable_and_ordered() {
         (Error::InvalidNonce, 901),
         (Error::StaleNonce, 902),
         (Error::BelowMinimum, 1001),
-        (Error::InvalidThreshold, 1101),
-        (Error::DuplicateSigner, 1102),
-        (Error::SignerNotFound, 1103),
-        (Error::ProposalNotFound, 1104),
-        (Error::AlreadyApproved, 1105),
-        (Error::ProposalAlreadyExecuted, 1106),
-        (Error::ThresholdNotMet, 1107),
-        (Error::MaxSignersReached, 1108),
+        (Error::DepositRateLimitExceeded, 1100),
+        (Error::InvalidThreshold, 1201),
+        (Error::DuplicateSigner, 1202),
+        (Error::SignerNotFound, 1203),
+        (Error::ProposalNotFound, 1204),
+        (Error::AlreadyApproved, 1205),
+        (Error::ProposalAlreadyExecuted, 1206),
+        (Error::ThresholdNotMet, 1207),
+        (Error::MaxSignersReached, 1208),
     ];
 
     for (error, expected_code) in codes {
