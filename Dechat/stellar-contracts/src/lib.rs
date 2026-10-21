@@ -2792,8 +2792,14 @@ impl FiatBridge {
             .unwrap_or(0);
         let mut operators = Self::get_operator_list(&env);
 
-        if active && !was_active && max_operators > 0 && operators.len() >= max_operators {
-            return Err(Error::OperatorCapReached);
+        // Boundary check: adding a new operator must not exceed the configured
+        // cap. max_operators == 0 is the "unlimited" sentinel and bypasses the
+        // check. This guard must come after prune_inactive_operators_internal
+        // so operators.len() reflects the true live count.
+        if active && !was_active {
+            if max_operators > 0 && operators.len() >= max_operators {
+                return Err(Error::OperatorCapReached);
+            }
         }
 
         env.storage()
@@ -2829,13 +2835,26 @@ impl FiatBridge {
 
     pub fn set_max_operators(env: Env, max_operators: u32) -> Result<(), Error> {
         let _admin = Self::require_admin(&env)?;
-        let current_count: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::OperatorCount)
-            .unwrap_or(0);
-        // Reject if reduction would go below current active operator count
-        if max_operators > 0 && current_count > max_operators {
+
+        // Use the live operator list (not the cached OperatorCount) so that
+        // any operators pruned since the last set_operator call are excluded.
+        // This prevents set_max_operators from accepting a cap that is already
+        // violated by the true active-operator count.
+        let live_operators = Self::get_operator_list(&env);
+        let mut retained_count: u32 = 0;
+        for op in live_operators.iter() {
+            let is_active = env
+                .storage()
+                .instance()
+                .get::<_, bool>(&DataKey::Operator(op.clone()))
+                .unwrap_or(false);
+            if is_active {
+                retained_count = retained_count.saturating_add(1);
+            }
+        }
+
+        // Reject if the new cap (when non-zero) would be below the live count.
+        if max_operators > 0 && retained_count > max_operators {
             return Err(Error::ExceedsLimit);
         }
         // Read the outgoing cap before overwriting it so the event carries the

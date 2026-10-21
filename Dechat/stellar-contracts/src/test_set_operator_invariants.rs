@@ -697,3 +697,100 @@ proptest! {
         prop_assert!(bridge.is_operator(&operator));
     }
 }
+
+// ── set_max_operators uses live count, not stale OperatorCount ────────────────
+
+/// set_max_operators must reject a cap that would be immediately violated even
+/// when the stored OperatorCount has not been refreshed by a recent set_operator
+/// call.  This validates the fix that reads the live operator list instead of
+/// relying on the cached counter.
+#[test]
+fn set_max_operators_rejects_cap_below_live_active_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+
+    // Activate three operators so the live count is 3.
+    bridge.set_operator(&a, &true, &0);
+    bridge.set_operator(&b, &true, &0);
+    bridge.set_operator(&c, &true, &0);
+
+    // Attempting to set a cap of 2 while 3 are active must fail.
+    assert_eq!(
+        bridge.try_set_max_operators(&2),
+        Err(Ok(Error::ExceedsLimit))
+    );
+
+    // Setting the cap equal to the live count (3) is allowed.
+    bridge.set_max_operators(&3);
+
+    // Now deactivate one; the cap can then be lowered to 2.
+    bridge.set_operator(&c, &false, &1);
+    bridge.set_max_operators(&2);
+
+    // And a new operator still cannot be added beyond the cap.
+    let d = Address::generate(&env);
+    assert_eq!(
+        bridge.try_set_operator(&d, &true, &0),
+        Err(Ok(Error::OperatorCapReached))
+    );
+}
+
+/// Calling set_max_operators(0) must always succeed — 0 is the sentinel for
+/// "unlimited".  No boundary check applies when the cap is removed.
+#[test]
+fn set_max_operators_zero_always_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    bridge.set_operator(&a, &true, &0);
+    bridge.set_operator(&b, &true, &0);
+
+    // Even with 2 active operators, removing the cap (setting it to 0) must succeed.
+    bridge.set_max_operators(&0);
+
+    // After removing the cap a third operator must be admissible.
+    let c = Address::generate(&env);
+    bridge.set_operator(&c, &true, &0);
+    assert!(bridge.is_operator(&c));
+}
+
+/// The cap check in set_operator uses the live list length (post-prune), not
+/// the raw OperatorCount storage key.  After a prune removes inactive operators
+/// the cap check must reflect the reduced roster.
+#[test]
+fn set_operator_cap_check_uses_post_prune_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_contract_id, bridge, _admin) = setup_bridge(&env);
+    bridge.set_max_operators(&2);
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+
+    bridge.set_operator(&a, &true, &0);
+    bridge.set_operator(&b, &true, &0);
+
+    // Cap is reached: adding c must fail.
+    assert_eq!(
+        bridge.try_set_operator(&c, &true, &0),
+        Err(Ok(Error::OperatorCapReached))
+    );
+
+    // Deactivate b, then add c — the list is now [a, c] which is within cap.
+    bridge.set_operator(&b, &false, &1);
+    bridge.set_operator(&c, &true, &0);
+    assert!(bridge.is_operator(&c));
+    assert!(!bridge.is_operator(&b));
+}
