@@ -2873,7 +2873,7 @@ impl FiatBridge {
             version: EVENT_VERSION,
             previous,
             max_operators,
-            active_operators: current_count,
+            active_operators: retained_count,
         }
         .publish(&env);
 
@@ -3329,15 +3329,6 @@ impl FiatBridge {
             }
         }
         let denied = env.storage().persistent().has(&DataKey::Denied(address));
-        // Emit event when address is checked for denylist status
-        events::extend(env, &events::Topics {
-            phantom: PhantomData,
-            attributes: (
-                StringVal::from_str(&env, "is_denied_checked"),
-                address.clone(),
-                StringVal::from_str(&env, if denied { "denied" } else { "allowed" }),
-            ),
-        });
         Ok(denied)
     }
 
@@ -3519,7 +3510,7 @@ impl FiatBridge {
     /// unauthenticated caller pretending the result came from an admin query.
     ///
     /// # Errors
-    /// * [`Error::NotAdmin`] — if `caller` is not the current admin.
+    /// * [`Error::Unauthorized`] — if `caller` is not the current admin.
     pub fn get_accrued_fees_authenticated(
         env: Env,
         caller: Address,
@@ -3528,7 +3519,7 @@ impl FiatBridge {
         caller.require_auth();
         let _admin = Self::require_admin(&env)?;
         if _admin != caller {
-            return Err(Error::NotAdmin);
+            return Err(Error::Unauthorized);
         }
 
         if !env
